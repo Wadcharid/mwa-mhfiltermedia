@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MWA Mahasawat Filter Media Model | ระบบคำนวณการเติมสารกรองและออกแบบบ่อกรอง โรงงานผลิตน้ำมหาสวัสดิ์</title>
+  <!-- Google Fonts: Sarabun & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- KaTeX for Academic Math Rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+  <!-- App Styles -->
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- Top Header -->
+  <header class="app-header py-4 px-6">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <span class="px-2.5 py-0.5 rounded bg-sky-400/20 border border-sky-300/40 text-sky-100 text-xs font-bold tracking-wider uppercase">
+            MWA • MAHA SAWAT WTP
+          </span>
+          <span class="text-xs text-sky-200">อ้างอิงหลักวิชาการ AWWA 6th Ed. • MWH 3rd Ed. • Kawamura (2000)</span>
+        </div>
+        <h1 class="text-xl md:text-2xl font-bold mt-1 tracking-tight">
+          ระบบคำนวณการเติมสารกรองและวิเคราะห์สมรรถนะบ่อกรอง โรงงานผลิตน้ำมหาสวัสดิ์
+        </h1>
+        <p class="text-sky-100 text-xs md:text-sm mt-0.5">
+          Filter Media Replenishment, Composite Grain-Size Mixing &amp; Hydraulic Optimization Model (เฟส 1&amp;2 Aquazur "V", เฟส 3 SG/OTV, เฟส 4 ITA)
+        </p>
+      </div>
+      <div class="flex items-center gap-2 no-print">
+        <button id="btnPrintReport" type="button" class="btn-secondary text-xs bg-white/10 text-white border-white/30 hover:bg-white/20">
+          🖨️ พิมพ์รายงาน / PDF
+        </button>
+        <a href="https://github.com/Wadcharid/mwa-mhfiltermedia" target="_blank" rel="noopener noreferrer" class="btn-secondary text-xs bg-white/10 text-white border-white/30 hover:bg-white/20">
+          🔗 GitHub Repo
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Bar -->
+  <nav class="nav-tabs max-w-7xl mx-auto" role="tablist">
+    <button type="button" class="nav-tab-btn active" data-tab="tab-replenish">
+      <span>1. คำนวณเติมสารกรอง (3 แนวทาง)</span>
+    </button>
+    <button type="button" class="nav-tab-btn" data-tab="tab-reverse">
+      <span>2. หาค่า ES / ความลึก / Filtration Rate ที่เหมาะสม</span>
+    </button>
+    <button type="button" class="nav-tab-btn" data-tab="tab-backwash">
+      <span>3. วิเคราะห์การล้างย้อน &amp; สาเหตุสารกรองหลุดหาย</span>
+    </button>
+    <button type="button" class="nav-tab-btn" data-tab="tab-batch">
+      <span>4. ตารางสรุปแผนจัดซื้อหลายบ่อ</span>
+      <span id="batchCountBadge" class="px-1.5 py-0.2 bg-sky-700 text-white rounded-full text-xs">0</span>
+    </button>
+    <button type="button" class="nav-tab-btn" data-tab="tab-academic">
+      <span>5. ทฤษฎีวิชาการ &amp; ข้อมูล Design มหาสวัสดิ์</span>
+    </button>
+  </nav>
+
+  <!-- Main Content Container -->
+  <main class="max-w-7xl mx-auto p-4 md:p-6">
+
+    <!-- ===================================================================
+         TAB 1: REPLENISHMENT CALCULATOR (คำนวณการเติมสารกรอง 3 แนวทาง)
+         =================================================================== -->
+    <section id="tab-replenish" class="tab-panel">
+      <!-- Step 1: Select Plant Phase Preset -->
+      <div class="eng-card">
+        <div class="eng-card-header">
+          <h2 class="eng-card-title">
+            <span>① เลือกประเภทบ่อกรองตาม Design โรงงานผลิตน้ำมหาสวัสดิ์ (Plant Phase Selection)</span>
+          </h2>
+          <span id="activePresetBadge" class="badge badge-info">Phase 1 &amp; 2 (Aquazur V)</span>
+        </div>
+        <div class="preset-grid" id="presetSelectorGrid">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Filter Metadata & Design Summary Bar -->
+        <div class="grid grid-cols-1 md:grid-cols-6 gap-3 mt-4 pt-4 border-t border-slate-200 bg-slate-50 p-3 rounded-lg">
+          <div>
+            <label class="form-label" for="inputFilterName">ชื่อ/หมายเลขบ่อกรอง</label>
+            <input type="text" id="inputFilterName" class="form-input num-mono" value="บ่อกรอง F-01 (เฟส 1)" />
+          </div>
+          <div>
+            <label class="form-label" for="inputFilterArea">พื้นที่บ่อกรอง $A$ ($\text{m}^2$)</label>
+            <input type="number" id="inputFilterArea" class="form-input num-mono" step="0.1" min="10" value="197.8" />
+          </div>
+          <div>
+            <label class="form-label" for="inputFiltrationRate">อัตราการกรอง $v_F$ ($\text{m/h}$)</label>
+            <input type="number" id="inputFiltrationRate" class="form-input num-mono" step="0.1" min="2" value="11.0" />
+          </div>
+          <div>
+            <label class="form-label" for="inputWaterTemp">อุณหภูมิน้ำ $T$ ($^\circ\text{C}$)</label>
+            <input type="number" id="inputWaterTemp" class="form-input num-mono" step="0.5" min="10" max="40" value="28.0" />
+          </div>
+          <div>
+            <label class="form-label" for="inputSkimAllowance">เผื่อปาดผิว Skimming (%)</label>
+            <input type="number" id="inputSkimAllowance" class="form-input num-mono" step="0.5" min="0" max="30" value="3.0" />
+          </div>
+          <div>
+            <label class="form-label" for="inputCompactAllowance">เผื่อยุบตัว/สูญเสีย (%)</label>
+            <input type="number" id="inputCompactAllowance" class="form-input num-mono" step="0.5" min="0" max="30" value="7.0" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Current Media Condition & Random Multi-Point Sampling -->
+      <div class="eng-card">
+        <div class="eng-card-header flex-wrap gap-2">
+          <div>
+            <h2 class="eng-card-title">
+              <span>② ข้อมูลสภาพสารกรองปัจจุบัน (Current Media Condition: ขนาด ES, UC และระดับความลึก)</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              สามารถกรอกค่าตัวแทนของบ่อโดยตรง หรือเปิดโหมด "รวมผลจากการสุ่มเก็บตัวอย่างหลายตำแหน่ง/ความลึกไม่แน่นอน" เพื่อคำนวณค่า Composite ES &amp; UC อัตโนมัติ
+            </p>
+          </div>
+          <div class="flex items-center gap-2 no-print">
+            <button type="button" id="btnToggleSamplingModal" class="btn-secondary text-xs">
+              🧪 เปิดเครื่องมือคำนวณจากการสุ่มเก็บหลายจุด/ความลึก (Multi-Point Sampling)
+            </button>
+            <button type="button" id="btnResetToSampleDefect" class="btn-secondary text-xs">
+              🔄 โหลดตัวอย่างสารกรองพร่อง
+            </button>
+          </div>
+        </div>
+
+        <!-- Collapsible Multi-Point Random Sampling Aggregator Panel -->
+        <div id="multiSamplePanel" class="hidden mb-5 p-4 rounded-xl bg-sky-50/70 border border-sky-200">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-3 border-b border-sky-200">
+            <div>
+              <h3 class="text-sm font-bold text-sky-950">
+                📊 ตารางคำนวณค่าตัวแทนจากการสุ่มเก็บตัวอย่างหลายตำแหน่งและหลายระดับความลึก (Stratified / Random Sampling Aggregator)
+              </h3>
+              <p class="text-xs text-sky-800">
+                เนื่องจากหน้างานเป็นการสุ่มเก็บตำแหน่งและความลึกไม่แน่นอน ระบบจะนำค่า $(ES_k, UC_k)$ ของทุกจุดมาสร้างฟังก์ชันการกระจายตัวสะสมรวม $F_{\text{composite}}(d) = \sum w_k \Phi\left(\frac{\ln d - \mu_k}{\sigma_k}\right)$ เพื่อหาค่า $ES_{\text{composite}}$ และ $UC_{\text{composite}}$ ที่แท้จริงตามหลักสถิติ Log-Normal
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="selectSampleLayerTarget" class="form-select text-xs w-44">
+                <option value="sand">สำหรับชั้นทราย (Sand)</option>
+                <option value="anthracite">สำหรับชั้นแอนทราไซต์ (Anthracite)</option>
+              </select>
+              <button type="button" id="btnAddSampleRow" class="btn-primary text-xs whitespace-nowrap">
+                + เพิ่มจุดสุ่มเก็บ
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto mt-3">
+            <table class="eng-table bg-white rounded-lg overflow-hidden">
+              <thead>
+                <tr>
+                  <th>จุดสุ่มเก็บ / ตำแหน่งในบ่อ</th>
+                  <th>ความลึกที่เก็บตัวอย่าง (เช่น ผิวบน/กลาง/ล่าง)</th>
+                  <th>ความหนาชั้นสารกรองที่วัดได้ ณ จุดนี้ (ม.)</th>
+                  <th>น้ำหนักถ่วง ($w_k$)</th>
+                  <th>ค่า $ES_k$ ($d_{10}$, มม.)</th>
+                  <th>ค่า $UC_k$ ($d_{60}/d_{10}$)</th>
+                  <th>จัดการ</th>
+                </tr>
+              </thead>
+              <tbody id="randomSamplesTableBody">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="mt-3 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3 rounded-lg border border-sky-200">
+            <div id="randomSampleSummaryText" class="text-xs text-slate-700">
+              <!-- Summary populated by JS -->
+            </div>
+            <button type="button" id="btnApplyCompositeToLayer" class="btn-primary text-xs">
+              ✅ นำค่า Composite ES, UC และความลึกเฉลี่ยไปใช้คำนวณในบ่อนี้
+            </button>
+          </div>
+        </div>
+
+        <!-- Layer Inputs Grid (Anthracite & Sand) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" id="layerInputsContainer">
+          <!-- Anthracite Layer Card (shown when dual media is active) -->
+          <div id="cardInputAnthracite" class="p-4 rounded-xl border-2 border-slate-300 bg-slate-50/60">
+            <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-200">
+              <div class="flex items-center gap-2">
+                <span class="layer-pill-anthracite">ชั้นบน: Anthracite</span>
+                <span class="text-sm font-bold text-slate-800">สารกรองแอนทราไซต์</span>
+              </div>
+              <span class="text-xs text-slate-500">ความหนาแน่นรวม $\approx 800\text{ kg/m}^3$</span>
+            </div>
+
+            <!-- Design Spec Row -->
+            <div class="grid grid-cols-3 gap-2.5 p-2.5 rounded-lg bg-slate-200/70 mb-3">
+              <div>
+                <label class="form-label text-xs" for="designDepthAnth">ความลึก Design $L_{\text{design}}$ (ม.)</label>
+                <input type="number" id="designDepthAnth" class="form-input num-mono text-sm" step="0.01" min="0.1" value="0.80" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="designESAnth">ขนาด Design $ES$ (มม.)</label>
+                <input type="number" id="designESAnth" class="form-input num-mono text-sm" step="0.01" min="0.4" value="1.55" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="designUCAnth">ค่า Design $UC$</label>
+                <input type="number" id="designUCAnth" class="form-input num-mono text-sm" step="0.01" min="1.1" value="1.50" />
+              </div>
+            </div>
+
+            <!-- Current Condition Row -->
+            <div class="grid grid-cols-3 gap-2.5 p-2.5 rounded-lg bg-white border border-sky-300 mb-3">
+              <div>
+                <label class="form-label text-xs text-sky-900" for="currDepthAnth">ระดับความลึกปัจจุบัน $L_{\text{curr}}$ (ม.)</label>
+                <input type="number" id="currDepthAnth" class="form-input num-mono font-bold text-sky-900" step="0.01" min="0" value="0.58" />
+              </div>
+              <div>
+                <label class="form-label text-xs text-sky-900" for="currESAnth">ขนาดปัจจุบัน $ES_{\text{curr}}$ (มม.)</label>
+                <input type="number" id="currESAnth" class="form-input num-mono font-bold text-sky-900" step="0.01" min="0.2" value="1.64" />
+              </div>
+              <div>
+                <label class="form-label text-xs text-sky-900" for="currUCAnth">ค่าปัจจุบัน $UC_{\text{curr}}$</label>
+                <input type="number" id="currUCAnth" class="form-input num-mono font-bold text-sky-900" step="0.01" min="1.05" value="1.58" />
+              </div>
+            </div>
+
+            <!-- Optional New Supply Spec & Tolerance Row -->
+            <div class="grid grid-cols-3 gap-2.5 text-xs">
+              <div>
+                <label class="form-label text-xs" for="supplyESAnth">ES สารกรองใหม่ที่จะเติม (มม.)</label>
+                <input type="number" id="supplyESAnth" class="form-input num-mono text-xs" step="0.01" value="1.55" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="supplyUCAnth">UC สารกรองใหม่ที่จะเติม</label>
+                <input type="number" id="supplyUCAnth" class="form-input num-mono text-xs" step="0.01" value="1.50" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="tolESAnth">เกณฑ์ยอมรับ $\pm\Delta ES$ (%)</label>
+                <input type="number" id="tolESAnth" class="form-input num-mono text-xs" step="0.5" min="1" max="15" value="5.0" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Sand Layer Card -->
+          <div id="cardInputSand" class="p-4 rounded-xl border-2 border-amber-300 bg-amber-50/40">
+            <div class="flex items-center justify-between mb-3 pb-2 border-b border-amber-200">
+              <div class="flex items-center gap-2">
+                <span class="layer-pill-sand">ชั้นทราย: Silica Sand</span>
+                <span class="text-sm font-bold text-slate-800">สารกรองทราย (Silica Sand)</span>
+              </div>
+              <span class="text-xs text-slate-500">ความหนาแน่นรวม $\approx 1,510\text{ kg/m}^3$</span>
+            </div>
+
+            <!-- Design Spec Row -->
+            <div class="grid grid-cols-3 gap-2.5 p-2.5 rounded-lg bg-amber-100/70 mb-3">
+              <div>
+                <label class="form-label text-xs" for="designDepthSand">ความลึก Design $L_{\text{design}}$ (ม.)</label>
+                <input type="number" id="designDepthSand" class="form-input num-mono text-sm" step="0.01" min="0.1" value="1.20" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="designESSand">ขนาด Design $ES$ (มม.)</label>
+                <input type="number" id="designESSand" class="form-input num-mono text-sm" step="0.01" min="0.3" value="0.95" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="designUCSand">ค่า Design $UC$</label>
+                <input type="number" id="designUCSand" class="form-input num-mono text-sm" step="0.01" min="1.1" value="1.40" />
+              </div>
+            </div>
+
+            <!-- Current Condition Row -->
+            <div class="grid grid-cols-3 gap-2.5 p-2.5 rounded-lg bg-white border border-amber-400 mb-3">
+              <div>
+                <label class="form-label text-xs text-amber-950" for="currDepthSand">ระดับความลึกปัจจุบัน $L_{\text{curr}}$ (ม.)</label>
+                <input type="number" id="currDepthSand" class="form-input num-mono font-bold text-amber-950" step="0.01" min="0" value="0.92" />
+              </div>
+              <div>
+                <label class="form-label text-xs text-amber-950" for="currESSand">ขนาดปัจจุบัน $ES_{\text{curr}}$ (มม.)</label>
+                <input type="number" id="currESSand" class="form-input num-mono font-bold text-amber-950" step="0.01" min="0.2" value="1.03" />
+              </div>
+              <div>
+                <label class="form-label text-xs text-amber-950" for="currUCSand">ค่าปัจจุบัน $UC_{\text{curr}}$</label>
+                <input type="number" id="currUCSand" class="form-input num-mono font-bold text-amber-950" step="0.01" min="1.05" value="1.48" />
+              </div>
+            </div>
+
+            <!-- Optional New Supply Spec & Tolerance Row -->
+            <div class="grid grid-cols-3 gap-2.5 text-xs">
+              <div>
+                <label class="form-label text-xs" for="supplyESSand">ES สารกรองใหม่ที่จะเติม (มม.)</label>
+                <input type="number" id="supplyESSand" class="form-input num-mono text-xs" step="0.01" value="0.95" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="supplyUCSand">UC สารกรองใหม่ที่จะเติม</label>
+                <input type="number" id="supplyUCSand" class="form-input num-mono text-xs" step="0.01" value="1.40" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="tolESSand">เกณฑ์ยอมรับ $\pm\Delta ES$ (%)</label>
+                <input type="number" id="tolESSand" class="form-input num-mono text-xs" step="0.5" min="1" max="15" value="5.0" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Executive Summary & 3-Mode Comparison Results -->
+      <div class="eng-card">
+        <div class="eng-card-header flex-wrap gap-2">
+          <div>
+            <h2 class="eng-card-title">
+              <span>③ ผลการคำนวณการเติมสารกรองเปรียบเทียบทั้ง 3 แนวทาง (3 Replenishment Approaches)</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              คลิกเลือกแนวทางที่ต้องการใช้เป็นแผนหลักในการสั่งซื้อและแสดงกราฟจำลองชั้นสารกรอง
+            </p>
+          </div>
+          <div class="flex items-center gap-2 no-print">
+            <label class="text-xs font-semibold text-slate-700" for="selectActiveModeForSummary">แนวทางที่เลือกใช้สรุปจัดซื้อ:</label>
+            <select id="selectActiveModeForSummary" class="form-select text-xs w-64 font-semibold">
+              <option value="A_topup">แนวทาง (ก-1): เติมสเปก Design ให้ได้ระดับเดิม (ไม่ปาดของเก่า)</option>
+              <option value="A_skim" selected>แนวทาง (ก-2): เติมสเปก Design + ปาดของเก่าออกเพื่อให้ผ่านเกณฑ์ ES/UC</option>
+              <option value="B">แนวทาง (ข): สั่งสเปกพิเศษ (Custom Blend) เพื่อดึงค่าเฉลี่ยกลับสู่ Design</option>
+              <option value="C">แนวทาง (ค): ปรับระดับความลึกชดเชยตามดัชนี L/d_e Ratio</option>
+            </select>
+            <button type="button" id="btnAddFilterToBatch" class="btn-primary text-xs whitespace-nowrap">
+              ➕ บันทึกบ่อนี้ลงตารางสรุปจัดซื้อ
+            </button>
+          </div>
+        </div>
+
+        <!-- Overall Filter Performance KPIs Before vs After -->
+        <div id="filterKpiSummaryGrid" class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Detailed 3-Mode Cards per Layer -->
+        <div id="threeModesResultContainer" class="space-y-6">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Step 4: Visual Cross-Section & Sieve Distribution Curve -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <!-- 2D Cross-Section Visualizer -->
+        <div class="eng-card lg:col-span-5">
+          <div class="eng-card-header">
+            <h3 class="eng-card-title text-base">
+              <span>📐 ภาพตัดขวางระดับชั้นสารกรอง (Filter Bed Cross-Section)</span>
+            </h3>
+          </div>
+          <div id="filterCrossSectionSvgContainer" class="w-full flex flex-col items-center justify-center">
+            <!-- SVG rendered by JS -->
+          </div>
+        </div>
+
+        <!-- Log-Normal Grain Size Distribution Chart -->
+        <div class="eng-card lg:col-span-7">
+          <div class="eng-card-header flex-wrap gap-2">
+            <div>
+              <h3 class="eng-card-title text-base">
+                <span>📈 กราฟการกระจายตัวของขนาดเม็ดสารกรอง (Log-Normal Sieve Curve)</span>
+              </h3>
+              <p class="text-xs text-slate-500">เปรียบเทียบกราฟ Design, สภาพปัจจุบัน, สารกรองที่เติม และผลลัพธ์รวมหลังเติม ($d_{10}$ ถึง $d_{90}$)</p>
+            </div>
+            <select id="selectChartLayer" class="form-select text-xs w-48 no-print">
+              <option value="sand">แสดงกราฟชั้นทราย (Sand)</option>
+              <option value="anthracite">แสดงกราฟชั้นแอนทราไซต์ (Anthracite)</option>
+            </select>
+          </div>
+          <div class="chart-box">
+            <canvas id="sieveCurveCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         TAB 2: FLEXIBLE REVERSE DESIGN & FILTRATION RATE SOLVER
+         =================================================================== -->
+    <section id="tab-reverse" class="tab-panel hidden">
+      <div class="eng-card">
+        <div class="eng-card-header flex-wrap gap-2">
+          <div>
+            <h2 class="eng-card-title">
+              <span>🎯 เครื่องมือคำนวณย้อนกลับหาค่า ES, ความลึก L, UC และ Filtration Rate ที่เหมาะสม (Reverse Design Solver)</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              กรอกระดับความลึก ($L$), ค่า $UC$, และอัตราการกรอง ($v_F$ เช่น $10\text{–}12\text{ m/h}$) เพื่อคำนวณหาขนาด $ES (d_{10})$ ที่เหมาะสมตามหลักวิชาการ (Kawamura $L/d_e$, MWH Optimization $t_B = t_{HL}$, และ Wen &amp; Yu Fluidization)
+            </p>
+          </div>
+          <div class="flex items-center gap-2 no-print">
+            <span class="text-xs text-slate-600 font-semibold">โหลดค่าตั้งต้น:</span>
+            <button type="button" class="btn-secondary text-xs rev-preset-btn" data-role="single_sand" data-l="1.20" data-uc="1.40" data-vf="11.0" data-vbw="55.0">
+              เฟส 1&amp;2 (Sand 1.2m)
+            </button>
+            <button type="button" class="btn-secondary text-xs rev-preset-btn" data-role="dual_anthracite" data-l="0.80" data-uc="1.50" data-vf="11.1" data-vbw="55.0">
+              เฟส 3 (Anthracite 0.8m)
+            </button>
+            <button type="button" class="btn-secondary text-xs rev-preset-btn" data-role="dual_sand" data-l="0.70" data-uc="1.50" data-vf="11.1" data-vbw="55.0">
+              เฟส 3 (Sand 0.7m)
+            </button>
+            <button type="button" class="btn-secondary text-xs rev-preset-btn" data-role="dual_anthracite" data-l="0.60" data-uc="1.40" data-vf="11.0" data-vbw="40.3">
+              เฟส 4 (Anthracite 0.6m)
+            </button>
+            <button type="button" class="btn-secondary text-xs rev-preset-btn" data-role="dual_sand" data-l="0.60" data-uc="1.50" data-vf="11.0" data-vbw="40.3">
+              เฟส 4 (Sand 0.6m)
+            </button>
+          </div>
+        </div>
+
+        <!-- Filtration Rate 10-12 m/h Verification Callout -->
+        <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 mb-5 text-xs text-emerald-950">
+          <div class="font-bold text-sm mb-1 flex items-center gap-2">
+            <span>✅ ผลการตรวจสอบค่า Filtration Rate 10–12 m/h จากเอกสาร Design โรงงานผลิตน้ำมหาสวัสดิ์และตำราวิชาการ:</span>
+          </div>
+          <ul class="list-disc list-inside space-y-0.5 text-emerald-900">
+            <li><strong>เฟส 1 &amp; 2 (Aquazur "V" Filter, 16 บ่อ)</strong>: อัตราการกรองปกติ (Nominal Flow) = <strong>11.0 m/h</strong> (และเมื่อหยุดล้างย้อน 1 บ่อในเฟส = <strong>12.57 m/h</strong>) [อ้างอิงเอกสาร Phase 1&amp;2 หน้า A-19]</li>
+            <li><strong>เฟส 3 (Dual-Media Filter, 14 บ่อ)</strong>: อัตราการกรองปกติ = <strong>11.1 m/h</strong> (267.9 m/day) และอัตราการกรองสูงสุดเมื่อล้างย้อน 1 บ่อ = <strong>12.0 m/h</strong> (288 m/day) [อ้างอิงเอกสาร Phase 3 หน้า 16]</li>
+            <li><strong>เฟส 4 (Dual-Media Filter, 14 บ่อ)</strong>: อัตราการกรองปกติ = <strong>11.0 m/h</strong> (264 m/day) และอัตราการกรองสูงสุดเมื่อล้างย้อน 1 บ่อ = <strong>11.8 m/h</strong> (283.2 m/day) [อ้างอิงเอกสาร Phase 4 หน้า 7]</li>
+            <li><strong>หลักวิชาการ (MWH หน้า 784 &amp; AWWA M37 หน้า 129)</strong>: สำหรับบ่อกรองเร็ว (Rapid Gravity Filter) ที่ใช้สารส้มร่วมกับ Polymer ช่วยสร้างตะกอน ช่วงอัตราการกรองที่เหมาะสมที่สุดคือ <strong>10.0–12.5 m/h (4–5 gpm/ft²)</strong> หากเกิน 12.5 m/h แรงเฉือนของน้ำจะเริ่มทำให้ตะกอนที่อ่อนแอหลุดทะลุ (Particle Detachment)</li>
+          </ul>
+        </div>
+
+        <!-- Solver Input Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200">
+          <div>
+            <label class="form-label" for="revLayerRole">ชนิดและบทบาทชั้นสารกรอง</label>
+            <select id="revLayerRole" class="form-select text-xs font-semibold">
+              <option value="single_sand">ทรายชั้นเดียว (Single-Media Sand เช่น เฟส 1&amp;2)</option>
+              <option value="dual_anthracite">แอนทราไซต์ชั้นบน (Dual-Media Anthracite เช่น เฟส 3,4)</option>
+              <option value="dual_sand">ทรายชั้นล่าง (Dual-Media Sand เช่น เฟส 3,4)</option>
+              <option value="single_anthracite">แอนทราไซต์ชั้นเดียว (Deep-Bed Anthracite)</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" for="revDepthM">ความลึกชั้นสารกรอง $L$ (ม.)</label>
+            <input type="number" id="revDepthM" class="form-input num-mono font-bold text-sky-900" step="0.05" min="0.20" max="3.00" value="1.20" />
+          </div>
+          <div>
+            <label class="form-label" for="revUC">สัมประสิทธิ์ความสม่ำเสมอ $UC$</label>
+            <input type="number" id="revUC" class="form-input num-mono font-bold text-sky-900" step="0.05" min="1.15" max="2.20" value="1.40" />
+          </div>
+          <div>
+            <label class="form-label" for="revFiltrationRate">Filtration Rate $v_F$ ($\text{m/h}$)</label>
+            <input type="number" id="revFiltrationRate" class="form-input num-mono font-bold text-sky-900" step="0.2" min="4.0" max="25.0" value="11.0" />
+          </div>
+          <div>
+            <label class="form-label" for="revAvailHead">Head Loss สูงสุดที่ยอมให้ $H_T$ (m)</label>
+            <input type="number" id="revAvailHead" class="form-input num-mono" step="0.1" min="1.0" max="3.5" value="1.80" />
+          </div>
+          <div>
+            <label class="form-label" for="revBackwashRate">อัตราการล้างย้อนสูงสุด $V_{BW}$ ($\text{m/h}$)</label>
+            <input type="number" id="revBackwashRate" class="form-input num-mono" step="1.0" min="20.0" max="90.0" value="55.0" />
+          </div>
+        </div>
+
+        <!-- Reverse Solver Output Cards -->
+        <div id="reverseSolverResultBox" class="mt-5">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Optimization Chart & Inverse Depth Calculator -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-5">
+          <div class="lg:col-span-7 p-4 rounded-xl border border-slate-200 bg-white">
+            <h3 class="text-sm font-bold text-slate-800 mb-1">
+              📈 กราฟหาจุดเหมาะสมที่สุดของขนาดสารกรอง (MWH Fig. 11-13 Optimization: $t_B$ vs $t_{HL}$)
+            </h3>
+            <p class="text-xs text-slate-500 mb-3">
+              จุดตัดระหว่างเวลาที่ความขุ่นเริ่มทะลุ ($t_B$, เส้นทึบสีน้ำเงิน) กับเวลาที่ Head Loss เต็มพิกัด ($t_{HL}$, เส้นประสีส้ม) คือขนาด $ES$ ที่ให้ระยะเวลาเดินบ่อ (Filter Run Time) นานและปลอดภัยที่สุด
+            </p>
+            <div class="chart-box">
+              <canvas id="reverseOptChartCanvas"></canvas>
+            </div>
+          </div>
+
+          <div class="lg:col-span-5 p-4 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-slate-800 mb-1">
+                🔄 คำนวณย้อนกลับอีกทาง: รู้ขนาด $ES$ และ $UC$ $\rightarrow$ หาความลึก $L$ ที่เหมาะสม
+              </h3>
+              <p class="text-xs text-slate-500 mb-3">
+                กรณีทราบขนาด $ES$ และ $UC$ ของสารกรองที่มีอยู่ และต้องการทราบว่าต้องปูชั้นสารกรองหนาเท่าใดสำหรับอัตราการกรองที่กำหนด
+              </p>
+              <div class="grid grid-cols-3 gap-2.5 p-3 bg-slate-50 rounded-lg border border-slate-200 mb-3">
+                <div>
+                  <label class="form-label text-xs" for="invKnownES">ขนาด $ES$ ที่ทราบ (มม.)</label>
+                  <input type="number" id="invKnownES" class="form-input num-mono text-sm font-bold" step="0.02" min="0.3" max="2.5" value="0.95" />
+                </div>
+                <div>
+                  <label class="form-label text-xs" for="invKnownUC">ค่า $UC$ ที่ทราบ</label>
+                  <input type="number" id="invKnownUC" class="form-input num-mono text-sm font-bold" step="0.05" min="1.15" max="2.2" value="1.40" />
+                </div>
+                <div>
+                  <label class="form-label text-xs" for="invKnownVf">อัตราการกรอง ($\text{m/h}$)</label>
+                  <input type="number" id="invKnownVf" class="form-input num-mono text-sm font-bold" step="0.2" min="4" max="25" value="11.0" />
+                </div>
+              </div>
+              <div id="inverseDepthResultCard" class="p-3.5 rounded-lg bg-sky-50 border border-sky-200 text-xs">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <!-- Sensitivity Matrix Table across v_F = 10, 11, 12 m/h -->
+            <div class="mt-4">
+              <h4 class="text-xs font-bold text-slate-700 mb-1.5">
+                ตารางเปรียบเทียบขนาด $ES$ ที่เหมาะสม เมื่อเปลี่ยนค่า $UC$ และอัตราการกรอง ($10\text{–}12\text{ m/h}$) ที่ความลึก $L$ ปัจจุบัน:
+              </h4>
+              <div class="overflow-x-auto">
+                <table class="eng-table text-xs" id="sensitivityMatrixTable">
+                  <!-- Populated by JS -->
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         TAB 3: BACKWASH HYDRAULICS & MEDIA LOSS DIAGNOSTICS
+         =================================================================== -->
+    <section id="tab-backwash" class="tab-panel hidden">
+      <div class="eng-card">
+        <div class="eng-card-header">
+          <div>
+            <h2 class="eng-card-title">
+              <span>🌊 วิเคราะห์ไฮดรอลิกส์การล้างย้อน &amp; วินิจฉัยสาเหตุที่สารกรองหลุดหาย (Backwash Fluidization &amp; Media Loss Diagnostics)</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              คำนวณความเร็วการลอยตัวต่ำสุด ($V_{mf}$ ตามสมการ Wen &amp; Yu, 1966), การขยายตัวของชั้นสารกรอง (Dharmarajah &amp; Cleasby, 1986), สภาวะ Collapse-Pulsing (Amirtharajah, 1984) และความเสี่ยงการพัดพาสารกรองหลุดข้ามรางน้ำล้างย้อน
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200 mb-5">
+          <div>
+            <label class="form-label" for="bwHighRate">อัตราน้ำล้างย้อนสูง $V_{BW,\text{high}}$ ($\text{m/h}$)</label>
+            <input type="number" id="bwHighRate" class="form-input num-mono font-bold" step="0.5" value="25.0" />
+          </div>
+          <div>
+            <label class="form-label" for="bwLowRate">อัตราน้ำล้างย้อนต่ำขณะเป่าลม $V_{BW,\text{low}}$ ($\text{m/h}$)</label>
+            <input type="number" id="bwLowRate" class="form-input num-mono font-bold" step="0.5" value="15.0" />
+          </div>
+          <div>
+            <label class="form-label" for="bwAirRate">อัตราการเป่าลม Air Scour $Q_a$ ($\text{m/h}$)</label>
+            <input type="number" id="bwAirRate" class="form-input num-mono font-bold" step="1.0" value="55.0" />
+          </div>
+          <div>
+            <label class="form-label" for="bwTroughFreeboard">ระยะจากผิวสารกรองถึงขอบรางน้ำล้างย้อน (ม.)</label>
+            <input type="number" id="bwTroughFreeboard" class="form-input num-mono font-bold" step="0.05" value="0.65" />
+          </div>
+        </div>
+
+        <div id="backwashDiagnosticsContainer" class="space-y-4">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         TAB 4: MULTI-FILTER BATCH PLANNER & PROCUREMENT EXPORT
+         =================================================================== -->
+    <section id="tab-batch" class="tab-panel hidden">
+      <div class="eng-card">
+        <div class="eng-card-header flex-wrap gap-2">
+          <div>
+            <h2 class="eng-card-title">
+              <span>📋 ตารางสรุปแผนจัดซื้อสารกรองรวมหลายบ่อ (Multi-Filter Batch Procurement Summary)</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              รวบรวมผลการคำนวณรายบ่อเพื่อสรุปปริมาตรสั่งซื้อ ($\text{m}^3$), น้ำหนักรวม (ตัน) และจำนวนถุง Big Bag สำหรับจัดทำรายงานขออนุมัติจัดซื้อ
+            </p>
+          </div>
+          <div class="flex items-center gap-2 no-print">
+            <button type="button" id="btnLoadDemoBatch" class="btn-secondary text-xs">
+              📥 โหลดข้อมูลจำลองหลายบ่อ (เฟส 1–4)
+            </button>
+            <button type="button" id="btnExportBatchCsv" class="btn-primary text-xs">
+              📊 ส่งออกไฟล์ CSV / Excel
+            </button>
+            <button type="button" id="btnClearBatch" class="btn-danger-outline text-xs">
+              🗑️ ล้างตาราง
+            </button>
+          </div>
+        </div>
+
+        <!-- Grand Total Cards -->
+        <div id="batchTotalsContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Batch Filters Table -->
+        <div class="overflow-x-auto">
+          <table class="eng-table" id="batchSummaryTable">
+            <thead>
+              <tr>
+                <th>ลำดับ</th>
+                <th>ชื่อบ่อกรอง / เฟส</th>
+                <th>พื้นที่ ($\text{m}^2$)</th>
+                <th>แนวทางที่เลือก</th>
+                <th>ทราย: ความลึกเติม / ปาดออก (ซม.)</th>
+                <th>ทราย: สเปกที่สั่ง (ES / UC)</th>
+                <th>ทราย: ปริมาตรสั่งซื้อ ($\text{m}^3$ / ตัน)</th>
+                <th>แอนทราไซต์: ความลึกเติม / ปาดออก (ซม.)</th>
+                <th>แอนทราไซต์: สเปกที่สั่ง (ES / UC)</th>
+                <th>แอนทราไซต์: ปริมาตรสั่งซื้อ ($\text{m}^3$ / ตัน)</th>
+                <th class="no-print">ลบ</th>
+              </tr>
+            </thead>
+            <tbody id="batchTableBody">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         TAB 5: ACADEMIC THEORY & MAHASAWAT PLANT DESIGN REFERENCE
+         =================================================================== -->
+    <section id="tab-academic" class="tab-panel hidden">
+      <div class="eng-card">
+        <div class="eng-card-header">
+          <h2 class="eng-card-title">
+            <span>📚 ข้อมูลจำเพาะบ่อกรองโรงงานผลิตน้ำมหาสวัสดิ์ เฟส 1–4 (จากเอกสาร Plant Design Manuals)</span>
+          </h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="eng-table text-xs">
+            <thead>
+              <tr>
+                <th>พารามิเตอร์การออกแบบ</th>
+                <th>เฟส 1 &amp; 2 (Aquazur "V")</th>
+                <th>เฟส 3 (SG/OTV Consortium)</th>
+                <th>เฟส 4 (ITA / United Group)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="font-semibold">ประเภทบ่อกรอง</td>
+                <td>Rapid Gravity Mono-Media Sand Filter (Aquazur "V")</td>
+                <td>Constant Rate Dual-Media Filter (Open Wash Drain)</td>
+                <td>Constant Rate Dual-Media Filter (Modulating Outlet Valve)</td>
+              </tr>
+              <tr>
+                <td class="font-semibold">จำนวนบ่อกรอง และพื้นที่ต่อบ่อ</td>
+                <td>16 บ่อ (เฟสละ 8 บ่อ) × $197.8\text{ m}^2$ ($2 \times 19.78 \times 5.0\text{ m}$)</td>
+                <td>14 บ่อ × $112.0\text{ m}^2$</td>
+                <td>14 บ่อ × $111.6\text{ m}^2$</td>
+              </tr>
+              <tr>
+                <td class="font-semibold">อัตราการกรอง (Filtration Rate)</td>
+                <td>ปกติ $11.0\text{ m/h}$ (สูงสุด $12.57\text{ m/h}$ เมื่อล้าง 1 บ่อ)</td>
+                <td>ปกติ $11.1\text{ m/h}$ ($267.9\text{ m/d}$), สูงสุด $12.0\text{ m/h}$ ($288\text{ m/d}$)</td>
+                <td>ปกติ $11.0\text{ m/h}$ ($264\text{ m/d}$), สูงสุด $11.8\text{ m/h}$ ($283.2\text{ m/d}$)</td>
+              </tr>
+              <tr>
+                <td class="font-semibold">ชั้นแอนทราไซต์ (Anthracite Layer)</td>
+                <td>ไม่มี (ใช้ทรายชั้นเดียว)</td>
+                <td>ความลึก $0.80\text{ m}$, $ES = 1.55\text{ mm}$, $UC = 1.50$ ($L/d_{10} = 516$)</td>
+                <td>ความลึก $0.60\text{ m}$, $ES = 1.30\text{ mm}$, $UC = 1.40$ ($L/d_{10} = 462$)</td>
+              </tr>
+              <tr>
+                <td class="font-semibold">ชั้นทรายกรอง (Silica Sand Layer)</td>
+                <td>ความลึก $1.20\text{ m}$, $ES = 0.90\text{–}1.00\text{ mm}$, $UC = 1.40$ ($L/d_{10} = 1,263$)</td>
+                <td>ความลึก $0.70\text{ m}$, $ES = 0.90\text{–}1.00\text{ mm}$, $UC = 1.50$ ($L/d_{10} = 737$)</td>
+                <td>ความลึก $0.60\text{ m}$, $ES = 0.66\text{ mm}$, $UC = 1.50$ ($L/d_{10} = 909$)</td>
+              </tr>
+              <tr>
+                <td class="font-semibold">ชั้นกรวดรองพื้น (Gravel Layer)</td>
+                <td>ไม่ใช้ชั้นกรวด (วางบนพื้นหัวกรองโดยตรง)</td>
+                <td>ความลึก $0.20\text{ m}$</td>
+                <td>ความลึก $0.20\text{ m}$</td>
+              </tr>
+              <tr>
+                <td class="font-semibold">ค่าดัชนีรวม $\sum (L / d_{10})$</td>
+                <td>$\mathbf{1,200\text{ – }1,333}$ (ค่ากลาง $1,263$)</td>
+                <td>$\mathbf{1,253}$ ($516 + 737$)</td>
+                <td>$\mathbf{1,371}$ ($462 + 909$)</td>
+              </tr>
+              <tr>
+                <td class="font-semibold">ระบบล้างย้อน (Backwash &amp; Air Scour)</td>
+                <td>เป่าลมพร้อมน้ำล้างย้อน (Simultaneous Air + Water Wash)</td>
+                <td>Air Scour $50\text{ m/h}$ + น้ำอัตราต่ำ $8\text{ m/h}$, ตามด้วยน้ำอัตราสูง $55\text{ m/h}$</td>
+                <td>Air Scour $50\text{ m/h}$ + น้ำอัตราต่ำ $15.7\text{ m/h}$, ตามด้วยน้ำอัตราสูง $40.3\text{ m/h}$</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Academic Equations Card -->
+      <div class="eng-card space-y-5 text-sm">
+        <div class="eng-card-header">
+          <h2 class="eng-card-title">
+            <span>📖 สมการและหลักการทางวิชาการที่ใช้ในโมเดลคำนวณ (Academic Mathematical Formulation)</span>
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <h3 class="font-bold text-slate-900 mb-2">1. การกระจายขนาดเม็ดสารกรองแบบ Log-Normal และการผสมชั้นสารกรอง</h3>
+            <p class="text-xs text-slate-700 mb-2">
+              อ้างอิง <em>MWH's Water Treatment (Sec. 11-3)</em> และ <em>AWWA Water Quality &amp; Treatment 6th Ed. (Chap. 10, Eq. 10-1)</em> ขนาดเม็ดสารกรองมีความสัมพันธ์แบบ Log-Normal Distribution:
+            </p>
+            <div class="bg-white p-3 rounded border border-slate-200 text-xs overflow-x-auto">
+              $$\sigma_{\ln d} = \frac{\ln(UC)}{z_{0.60} - z_{0.10}} = \frac{\ln(d_{60}/d_{10})}{1.5349}, \quad \mu_{\ln d} = \ln(d_{10}) - z_{0.10}\sigma_{\ln d}$$
+              $$d_{90} = d_{10} \times 10^{1.67 \log_{10}(UC)}$$
+            </div>
+            <p class="text-xs text-slate-700 mt-2">
+              เมื่อผสมสารกรองเดิมความลึก $L_{\text{old}}$ กับสารกรองใหม่ความลึก $L_{\text{new}}$ (หรือรวมผลจากการสุ่มเก็บตัวอย่าง $K$ จุด) ฟังก์ชันการกระจายสะสมรวม (Composite Mixture CDF) คือ:
+            </p>
+            <div class="bg-white p-3 rounded border border-slate-200 text-xs overflow-x-auto mt-1">
+              $$F_{\text{mix}}(d) = \sum_{k=1}^{K} w_k \, \Phi\left(\frac{\ln d - \mu_k}{\sigma_k}\right), \quad ES_{\text{mix}} = F_{\text{mix}}^{-1}(0.10), \quad UC_{\text{mix}} = \frac{F_{\text{mix}}^{-1}(0.60)}{F_{\text{mix}}^{-1}(0.10)}$$
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <h3 class="font-bold text-slate-900 mb-2">2. ดัชนีสมรรถนะการกรอง ($L/d_e$ Ratio) และการหาค่า $ES$ ที่เหมาะสม</h3>
+            <p class="text-xs text-slate-700 mb-2">
+              อ้างอิง <em>Kawamura (2000)</em>, <em>Ives &amp; Sholji (1965)</em> และ <em>Lawler &amp; Nason (2006)</em> (AWWA 6th Ed. หน้า 10.18):
+            </p>
+            <div class="bg-white p-3 rounded border border-slate-200 text-xs overflow-x-auto">
+              $$\sum_{i} \frac{L_i (\text{mm})}{d_{10,i} (\text{mm})} \ge \begin{cases} 1,000 & \text{สำหรับ Dual-Media และ Fine Sand} \\ 1,200\text{–}1,250 & \text{สำหรับ Coarse Single-Media } (d_{10} \approx 1.0\text{–}1.5\text{ mm}) \end{cases}$$
+            </div>
+            <p class="text-xs text-slate-700 mt-2">
+              และจากสมการ Phenomenological Optimization ของ <em>MWH (Sec. 11-5, Eq. 11-62 &amp; 11-65, Fig. 11-13)</em> ขนาด $ES$ ที่เหมาะสมที่สุดที่อัตราการกรอง $v_F$ คือจุดสมดุลที่เวลาความขุ่นทะลุเท่ากับเวลาที่ Head loss เต็มพิกัด ($t_B = t_{HL}$):
+            </p>
+            <div class="bg-white p-3 rounded border border-slate-200 text-xs overflow-x-auto mt-1">
+              $$t_B \propto \frac{L \cdot d_e^{-0.75}}{v_F (C_0 - C_E)}, \quad t_{HL} \propto \frac{(H_T - h_{L,0}) \cdot L}{v_F (C_0 - C_E) \cdot d_e^{-0.81}}$$
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <h3 class="font-bold text-slate-900 mb-2">3. การสูญเสียเฮดในชั้นสารกรองสะอาด (Ergun / Trussell &amp; Chang Equation)</h3>
+            <p class="text-xs text-slate-700 mb-2">
+              อ้างอิง <em>MWH Eq. (11-13)</em> และ <em>Trussell &amp; Chang (1999)</em> สำหรับการคำนวณ Clean-Bed Head Loss ($h_{L,0}$):
+            </p>
+            <div class="bg-white p-3 rounded border border-slate-200 text-xs overflow-x-auto">
+              $$h_{L,0} = \kappa_V \frac{(1-\varepsilon)^2}{\varepsilon^3} \frac{\mu L v_F}{\rho_w g d_{10}^2} + \kappa_I \frac{1-\varepsilon}{\varepsilon^3} \frac{L v_F^2}{g d_{10}}$$
+            </div>
+            <p class="text-xs text-slate-700 mt-2">
+              โดยค่าพารามิเตอร์มาตรฐาน (MWH Table 11-3):
+              <br>• <strong>ทราย (Sand)</strong>: $\kappa_V = 112.5$, $\kappa_I = 2.25$, $\varepsilon = 0.40\text{–}0.43$, $\rho_s = 2,650\text{ kg/m}^3$
+              <br>• <strong>แอนทราไซต์ (Anthracite)</strong>: $\kappa_V = 228.0$, $\kappa_I = 4.40$, $\varepsilon = 0.47\text{–}0.52$, $\rho_s = 1,600\text{ kg/m}^3$
+            </p>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <h3 class="font-bold text-slate-900 mb-2">4. ไฮดรอลิกส์การล้างย้อน การลอยตัว ($V_{mf}$) และการปาดผิว (Skimming)</h3>
+            <p class="text-xs text-slate-700 mb-2">
+              อ้างอิงสมการ <em>Wen &amp; Yu (1966)</em> (AWWA 6th Ed. Eq. 10-20 &amp; 10-21) สำหรับความเร็วการลอยตัวต่ำสุด:
+            </p>
+            <div class="bg-white p-3 rounded border border-slate-200 text-xs overflow-x-auto">
+              $$Ga = \frac{d^3 \rho_w (\rho_s - \rho_w) g}{\mu^2}, \quad V_{mf} = \frac{\mu}{\rho_w d}\left(\sqrt{33.7^2 + 0.0408\,Ga} - 33.7\right)$$
+            </div>
+            <p class="text-xs text-slate-700 mt-2">
+              และสมการ <em>Collapse-Pulsing Air + Water Wash</em> ของ <em>Amirtharajah (1984)</em> (AWWA Eq. 10-18):
+              $$0.45\,Q_a^2 + 100\left(\frac{V}{V_{mf,60}}\right) = 41.9$$
+              รวมถึงการเผื่อปริมาตรสำหรับการปาดเม็ดละเอียดผิวหน้าหลังการล้างย้อนครั้งแรก (Skimming of fines $\approx 2\text{–}5\%$) และการยุบตัวของชั้นสารกรอง (Compaction $\approx 5\text{–}10\%$)
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="max-w-7xl mx-auto px-6 py-6 text-center text-xs text-slate-500 border-t border-slate-200 mt-8 no-print">
+    พัฒนาสำหรับงานวิศวกรรมระบบกรองน้ำ โรงงานผลิตน้ำมหาสวัสดิ์ การประปานครหลวง (MWA) • อ้างอิงหลักการทางวิชาการ AWWA, MWH, และเอกสารการออกแบบโรงงานผลิตน้ำมหาสวัสดิ์ เฟส 1–4
+  </footer>
+
+  <!-- Scripts -->
+  <script src="js/models.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,369 @@
+/* ==========================================================================
+   MWA Mahasawat Filter Media Replenishment & Design Webapp Styles
+   การประปานครหลวง (กปน.) - โรงงานผลิตน้ำมหาสวัสดิ์
+   ========================================================================== */
+
+:root {
+  --mwa-primary: #005691;
+  --mwa-primary-dark: #003b64;
+  --mwa-primary-light: #e6f2fa;
+  --mwa-accent: #0096c7;
+  --mwa-teal: #0d9488;
+  --mwa-amber: #d97706;
+  --mwa-sand: #eab308;
+  --mwa-anthracite: #334155;
+  --mwa-gravel: #78716c;
+  --bg-page: #f1f5f9;
+  --bg-card: #ffffff;
+  --border-color: #cbd5e1;
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --success: #15803d;
+  --success-bg: #dcfce7;
+  --warning: #b45309;
+  --warning-bg: #fef3c7;
+  --danger: #b91c1c;
+  --danger-bg: #fee2e2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Sarabun', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  margin: 0;
+  padding: 0;
+  line-height: 1.55;
+}
+
+.num-mono {
+  font-variant-numeric: tabular-nums;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+/* Header Banner */
+.app-header {
+  background: linear-gradient(135deg, #003559 0%, #005691 55%, #0077b6 100%);
+  color: #ffffff;
+  border-bottom: 4px solid #38bdf8;
+  box-shadow: 0 4px 12px rgba(0, 53, 89, 0.18);
+}
+
+/* Navigation Tabs */
+.nav-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  border-bottom: 2px solid #cbd5e1;
+  background: #ffffff;
+  padding: 0.5rem 1rem 0 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+
+.nav-tab-btn {
+  padding: 0.7rem 1.15rem;
+  font-size: 0.94rem;
+  font-weight: 600;
+  color: #475569;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.nav-tab-btn:hover {
+  color: var(--mwa-primary);
+  background: #f8fafc;
+}
+
+.nav-tab-btn.active {
+  color: var(--mwa-primary);
+  border-bottom-color: var(--mwa-primary);
+  background: #f0f9ff;
+}
+
+/* Cards & Panels */
+.eng-card {
+  background: var(--bg-card);
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.eng-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.eng-card-title {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+/* Preset Selector Pills */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.preset-btn {
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border: 2px solid #cbd5e1;
+  border-radius: 0.65rem;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.preset-btn:hover {
+  border-color: #38bdf8;
+  background: #f8fafc;
+}
+
+.preset-btn.active {
+  border-color: var(--mwa-primary);
+  background: #f0f9ff;
+  box-shadow: 0 0 0 3px rgba(0, 86, 145, 0.14);
+}
+
+/* Form Controls */
+.form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 0.3rem;
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.94rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.45rem;
+  background: #ffffff;
+  color: #0f172a;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-input:focus,
+.form-select:focus {
+  outline: none;
+  border-color: var(--mwa-primary);
+  box-shadow: 0 0 0 3px rgba(0, 86, 145, 0.15);
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 9999px;
+}
+
+.badge-pass {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid #86efac;
+}
+
+.badge-warn {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid #fde047;
+}
+
+.badge-fail {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid #fca5a5;
+}
+
+.badge-info {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+}
+
+/* Mode Comparison Cards */
+.mode-card {
+  border: 2px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.1rem;
+  background: #ffffff;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.mode-card.selected {
+  border-color: var(--mwa-primary);
+  background: #f8fbff;
+  box-shadow: 0 4px 14px rgba(0, 86, 145, 0.12);
+}
+
+.mode-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Tables */
+.eng-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.eng-table th {
+  background: #f1f5f9;
+  color: #1e293b;
+  font-weight: 700;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 2px solid #cbd5e1;
+}
+
+.eng-table td {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: middle;
+}
+
+.eng-table tr:hover td {
+  background: #f8fafc;
+}
+
+/* Buttons */
+.btn-primary {
+  background: var(--mwa-primary);
+  color: #ffffff;
+  border: none;
+  padding: 0.55rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-radius: 0.45rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  transition: background 0.15s ease;
+}
+
+.btn-primary:hover {
+  background: var(--mwa-primary-dark);
+}
+
+.btn-secondary {
+  background: #ffffff;
+  color: #1e293b;
+  border: 1px solid #cbd5e1;
+  padding: 0.5rem 0.95rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  border-radius: 0.45rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.btn-danger-outline {
+  background: #fff1f2;
+  color: #be123c;
+  border: 1px solid #fecdd3;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 0.35rem;
+  cursor: pointer;
+}
+
+.btn-danger-outline:hover {
+  background: #ffe4e6;
+}
+
+/* Layer Color Indicators */
+.layer-pill-anthracite {
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 0.15rem 0.55rem;
+  border-radius: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.layer-pill-sand {
+  background: #fef08a;
+  color: #854d0e;
+  border: 1px solid #facc15;
+  padding: 0.15rem 0.55rem;
+  border-radius: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+/* Chart Containers */
+.chart-box {
+  position: relative;
+  height: 330px;
+  width: 100%;
+}
+
+/* Print Styles */
+@media print {
+  body {
+    background: #ffffff;
+    font-size: 11pt;
+  }
+  .no-print,
+  .nav-tabs {
+    display: none !important;
+  }
+  .eng-card {
+    box-shadow: none;
+    border: 1px solid #94a3b8;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .app-header {
+    background: #003559 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

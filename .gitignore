@@ -1,0 +1,12 @@
+# Reference PDFs (do not commit large textbook/manual PDFs to GitHub)
+*.pdf
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+node_modules/
+dist/
+__pycache__/
+*.pyc
