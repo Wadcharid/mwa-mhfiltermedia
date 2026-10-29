@@ -227,7 +227,31 @@
         el('currDepthAnth').value = sample.anthracite.currDepth.toFixed(2);
         el('currESAnth').value = sample.anthracite.currES.toFixed(2);
         el('currUCAnth').value = sample.anthracite.currUC.toFixed(2);
+      } else {
+        el('currDepthAnth').value = '0.00';
       }
+    }
+
+    // Sync Custom Simulator defaults with preset
+    if (el('simSandES')) {
+      el('simSandUnit').value = 'cm';
+      el('lblSimSandVal').textContent = 'ปริมาณที่เติม (ซม.)';
+      const missingSandCm = Math.max(0, (preset.layers.sand.designDepth - Number(el('currDepthSand').value)) * 100);
+      el('simSandVal').value = missingSandCm.toFixed(1);
+      el('simSandES').value = preset.layers.sand.designES.toFixed(2);
+      el('simSandUC').value = preset.layers.sand.designUC.toFixed(2);
+      el('simSandSkimCm').value = '0.0';
+
+      el('simAnthUnit').value = 'cm';
+      el('lblSimAnthVal').textContent = 'ปริมาณที่เติม (ซม.)';
+      const missingAnthCm = preset.layers.anthracite.enabled
+        ? Math.max(0, (preset.layers.anthracite.designDepth - Number(el('currDepthAnth').value)) * 100)
+        : 0;
+      el('simAnthVal').value = missingAnthCm.toFixed(1);
+      el('simAnthES').value = preset.layers.anthracite.designES.toFixed(2);
+      el('simAnthUC').value = preset.layers.anthracite.designUC.toFixed(2);
+      el('simAnthSkimCm').value = '0.0';
+      el('simTestVf').value = preset.normalFiltrationRate.toFixed(1);
     }
 
     renderRandomSamplesTable();
@@ -410,24 +434,537 @@
     );
     activeLayers.push(sandResult);
 
+    const influentNTU = el('inputInfluentNTU') ? Math.max(0.2, Number(el('inputInfluentNTU').value) || 2.0) : 2.0;
+
+    // 3. Evaluate Current Performance & 3 Practical Material Addition Options (Anthracite+Sand vs Sand Only vs Anthracite Only)
+    const customPreset = {
+      ...preset,
+      unitArea: filterArea,
+      layers: {
+        sand: {
+          ...preset.layers.sand,
+          enabled: true,
+          designDepth: sandConfig.designDepth,
+          designES: sandConfig.designES,
+          designUC: sandConfig.designUC
+        },
+        anthracite: {
+          ...preset.layers.anthracite,
+          enabled: preset.layers.anthracite.enabled,
+          designDepth: preset.layers.anthracite.enabled
+            ? Math.max(0.1, Number(el('designDepthAnth').value) || preset.layers.anthracite.designDepth)
+            : preset.layers.anthracite.designDepth,
+          designES: preset.layers.anthracite.enabled
+            ? Math.max(0.3, Number(el('designESAnth').value) || preset.layers.anthracite.designES)
+            : preset.layers.anthracite.designES,
+          designUC: preset.layers.anthracite.enabled
+            ? Math.max(1.1, Number(el('designUCAnth').value) || preset.layers.anthracite.designUC)
+            : preset.layers.anthracite.designUC
+        }
+      }
+    };
+
+    const strategyEval = M.evaluateMediaAdditionStrategies({
+      preset: customPreset,
+      filterArea,
+      numFilters: preset.numFilters || 14,
+      currentSand: {
+        depthM: Number(el('currDepthSand').value) || 0,
+        es: Number(el('currESSand').value) || sandConfig.designES,
+        uc: Number(el('currUCSand').value) || sandConfig.designUC
+      },
+      currentAnthracite: {
+        depthM: preset.layers.anthracite.enabled ? Number(el('currDepthAnth').value) || 0 : 0,
+        es: Number(el('currESAnth').value) || preset.layers.anthracite.designES,
+        uc: Number(el('currUCAnth').value) || preset.layers.anthracite.designUC
+      },
+      supplySand: {
+        es: Number(el('supplyESSand').value) || sandConfig.designES,
+        uc: Number(el('supplyUCSand').value) || sandConfig.designUC
+      },
+      supplyAnthracite: {
+        es: Number(el('supplyESAnth').value) || preset.layers.anthracite.designES,
+        uc: Number(el('supplyUCAnth').value) || preset.layers.anthracite.designUC
+      },
+      filtrationRateMph: filtrationRate,
+      tempC: waterTemp,
+      influentTurbidityNTU: influentNTU,
+      allowancePct: skimAllowance + compactAllowance
+    });
+
     state.lastCalculation = {
-      preset,
+      preset: customPreset,
       filterName,
       filterArea,
       filtrationRate,
+      influentNTU,
       waterTemp,
       skimAllowance,
       compactAllowance,
       anthResult,
       sandResult,
-      activeLayers
+      activeLayers,
+      strategyEval
     };
 
+    renderCurrentDiagnosis();
+    renderAdditionStrategies();
+    runCustomSimulator();
     renderKpiSummaryGrid();
     renderThreeModesComparison();
     renderCrossSectionSVG();
     renderSieveCurveChart();
     renderMath(el('tab-replenish'));
+  }
+
+  // =========================================================================
+  // STEP 2: RENDER CURRENT FILTER PERFORMANCE DIAGNOSIS
+  // =========================================================================
+  function renderCurrentDiagnosis() {
+    const calc = state.lastCalculation;
+    if (!calc || !calc.strategyEval) return;
+
+    const curr = calc.strategyEval.currentPerformance;
+    const des = calc.strategyEval.designPerformance;
+    const badge = el('currentStatusBadge');
+
+    if (badge) {
+      if (curr.statusLevel === 'good') {
+        badge.className = 'badge badge-pass';
+        badge.textContent = '✅ สภาพบ่ออยู่ในเกณฑ์มาตรฐาน';
+      } else if (curr.statusLevel === 'warning') {
+        badge.className = 'badge badge-warn';
+        badge.textContent = '⚠️ สมรรถนะเริ่มลดลง ควรวางแผนเติมสารกรอง';
+      } else {
+        badge.className = 'badge bg-rose-100 text-rose-800 border border-rose-300 font-bold';
+        badge.textContent = '🚨 สมรรถนะต่ำกว่าเกณฑ์ เสี่ยงความขุ่นทะลุ ควรเติมสารกรอง';
+      }
+    }
+
+    const rateDiff = curr.allowableFiltrationRateMph - calc.filtrationRate;
+    const rateOk = curr.allowableFiltrationRateMph >= calc.filtrationRate * 0.96;
+
+    const box = el('currentDiagnosisGrid');
+    if (!box) return;
+
+    box.innerHTML = `
+      <!-- Card 1: % Removal & Turbidity -->
+      <div class="p-4 rounded-xl bg-gradient-to-br from-sky-900 to-slate-900 text-white shadow">
+        <div class="text-xs text-sky-200 font-semibold flex items-center justify-between">
+          <span>ประสิทธิภาพบ่อกรองปัจจุบัน (% Removal)</span>
+          <span class="px-1.5 py-0.5 rounded bg-white/10 text-[11px] num-mono">${fmt(curr.operationalLogRemoval, 2)} Log</span>
+        </div>
+        <div class="flex items-baseline gap-2 mt-1.5">
+          <span class="text-3xl font-bold num-mono text-emerald-300">${fmt(curr.operationalRemovalPct, 2)}%</span>
+          <span class="text-xs text-sky-200">(Design: ${fmt(des.operationalRemovalPct, 2)}%)</span>
+        </div>
+        <div class="mt-2 pt-2 border-t border-white/15 text-xs space-y-1 text-sky-100">
+          <div class="flex justify-between">
+            <span>ความขุ่นน้ำกรองคาดการณ์:</span>
+            <strong class="num-mono ${curr.expectedEffluentNTU <= 0.10 ? 'text-emerald-300' : 'text-amber-300'}">${fmt(curr.expectedEffluentNTU, 3)} NTU</strong>
+          </div>
+          <div class="flex justify-between text-[11px] text-sky-300">
+            <span>Clean-Bed Removal เริ่มต้น:</span>
+            <span class="num-mono">${fmt(curr.cleanRemovalPct, 1)}% (น้ำเข้า ${fmt(curr.influentTurbidityNTU, 1)} NTU)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Allowable Filtration Rate -->
+      <div class="p-4 rounded-xl ${rateOk ? 'bg-emerald-50/70 border-emerald-300' : 'bg-amber-50/80 border-amber-300'} border-2">
+        <div class="text-xs font-bold ${rateOk ? 'text-emerald-950' : 'text-amber-950'}">
+          Filtration Rate ที่เหมาะสมของบ่อปัจจุบัน
+        </div>
+        <div class="flex items-baseline gap-2 mt-1.5">
+          <span class="text-3xl font-bold num-mono ${rateOk ? 'text-emerald-800' : 'text-rose-700'}">${fmt(curr.allowableFiltrationRateMph, 2)} m/h</span>
+          <span class="text-xs text-slate-600">(เดินจริง ${fmt(calc.filtrationRate, 1)} m/h)</span>
+        </div>
+        <div class="mt-2 pt-2 border-t border-slate-200/80 text-xs space-y-1 text-slate-700">
+          <div class="flex justify-between">
+            <span>กำลังผลิตน้ำที่เหมาะสมต่อบ่อ:</span>
+            <strong class="num-mono text-slate-900">${fmt(curr.allowableFlowPerFilterM3h, 0)} m³/ชม. (${fmt(curr.allowableFlowPerFilterM3d, 0)} m³/วัน)</strong>
+          </div>
+          <div class="text-[11px] ${rateOk ? 'text-emerald-800' : 'text-rose-700 font-semibold'}">
+            ${
+              rateOk
+                ? `✅ รองรับอัตราการกรอง ${fmt(calc.filtrationRate, 1)} m/h ได้ตามเกณฑ์`
+                : `⚠️ หากยังไม่เติมสารกรอง ควรลดอัตราการกรองลง ${fmt(Math.abs(rateDiff), 1)} m/h เพื่อกันความขุ่นทะลุ`
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Filter Run Time -->
+      <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+        <div class="text-xs font-bold text-slate-700">
+          ระยะเวลารอบการกรองปัจจุบัน (Filter Run Time)
+        </div>
+        <div class="flex items-baseline gap-2 mt-1.5">
+          <span class="text-2xl font-bold num-mono text-slate-900">${fmt(curr.governingRunTimeHours, 1)} ชม.</span>
+          <span class="text-xs text-slate-500">(Design: ${fmt(des.governingRunTimeHours, 1)} ชม.)</span>
+        </div>
+        <div class="mt-2 pt-2 border-t border-slate-200 text-xs space-y-1 text-slate-600">
+          <div class="flex justify-between">
+            <span>เวลาความขุ่นทะลุ ($t_B$) / ตัน ($t_{HL}$):</span>
+            <strong class="num-mono">${fmt(curr.tBreakthroughHours, 1)} / ${fmt(curr.tHeadLossHours, 1)} ชม.</strong>
+          </div>
+          <div class="flex justify-between text-[11px]">
+            <span>ปริมาณน้ำกรองต่อรอบ (UFRV):</span>
+            <strong class="num-mono text-sky-900">${fmt(curr.ufrvM3m2, 0)} m³/m²</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4: Clean-Bed Head Loss & L/de Capacity -->
+      <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+        <div class="text-xs font-bold text-slate-700">
+          Head Loss เริ่มต้น &amp; ความจุชั้นกรอง ($L/d_e$)
+        </div>
+        <div class="flex items-baseline justify-between mt-1.5">
+          <div>
+            <span class="text-2xl font-bold num-mono text-sky-900">${fmt(curr.cleanBedHeadLossM, 2)} mWC</span>
+          </div>
+          <div class="text-right">
+            <span class="text-xs text-slate-500">ความจุเหลือ:</span>
+            <strong class="text-sm font-bold num-mono ${curr.ldCapacityPctOfDesign >= 85 ? 'text-emerald-700' : 'text-rose-700'}">${fmt(curr.ldCapacityPctOfDesign, 0)}%</strong>
+          </div>
+        </div>
+        <div class="mt-2 pt-2 border-t border-slate-200 text-xs space-y-1 text-slate-600">
+          <div class="flex justify-between">
+            <span>ดัชนี $\\sum(L/d_{10})$ ปัจจุบัน vs Design:</span>
+            <strong class="num-mono">${fmt(curr.totalLdRatio, 0)} / ${fmt(des.totalLdRatio, 0)}</strong>
+          </div>
+          <div class="flex justify-between text-[11px]">
+            <span>ความลึกรวมปัจจุบัน:</span>
+            <strong class="num-mono">${fmt(curr.totalDepthM, 2)} ม. (ทราย ${fmt(curr.sandDepthM, 2)} + แอนทราไซต์ ${fmt(curr.anthraciteDepthM, 2)})</strong>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // =========================================================================
+  // STEP 3: RENDER 3 MATERIAL ADDITION STRATEGIES COMPARISON
+  //         (1. Anthracite+Sand vs 2. Sand Only vs 3. Anthracite Only)
+  // =========================================================================
+  function renderAdditionStrategies() {
+    const calc = state.lastCalculation;
+    if (!calc || !calc.strategyEval) return;
+
+    const ev = calc.strategyEval;
+    const banner = el('strategyRecommendationBanner');
+    const grid = el('threeAdditionStrategiesGrid');
+    if (!banner || !grid) return;
+
+    banner.innerHTML = `
+      <div class="p-4 rounded-xl bg-emerald-50 border-2 border-emerald-400 text-emerald-950 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <div class="font-bold text-base flex items-center gap-2">
+            <span>🏆 สรุปคำแนะนำทางวิศวกรรมสำหรับบ่อนี้:</span>
+            <span class="px-2.5 py-0.5 rounded-full bg-emerald-700 text-white text-xs">${ev.recommendedTitleTh}</span>
+          </div>
+          <span class="text-xs font-semibold text-emerald-800 num-mono">พื้นที่บ่อ ${fmt(ev.filterArea, 1)} m² (รวมเผื่อสั่งซื้อ +${fmt(calc.skimAllowance + calc.compactAllowance, 0)}%)</span>
+        </div>
+        <p class="text-xs text-emerald-900 leading-relaxed">${ev.recommendationReasonTh}</p>
+      </div>
+    `;
+
+    const optOrder = ['option1_both', 'option2_sand_only', 'option3_anthracite_only'];
+    grid.innerHTML = optOrder
+      .map((key) => {
+        const opt = ev.options[key];
+        const qS = opt.quantities.sand;
+        const qA = opt.quantities.anthracite;
+        const p = opt.performance;
+        const b = opt.resultingBed;
+        const isRec = opt.isRecommended;
+
+        const borderClass = isRec
+          ? 'border-2 border-emerald-500 bg-emerald-50/20 shadow-md ring-2 ring-emerald-500/20'
+          : 'border border-slate-200 bg-white';
+
+        return `
+          <div class="p-4 rounded-xl ${borderClass} flex flex-col justify-between">
+            <div>
+              <!-- Header -->
+              <div class="flex items-start justify-between gap-2 pb-2.5 mb-3 border-b border-slate-200">
+                <div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-xs font-bold uppercase tracking-wider text-sky-800">${opt.badgeTh}</span>
+                    ${
+                      isRec
+                        ? `<span class="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[11px] font-bold">⭐ เหมาะสมที่สุด</span>`
+                        : ''
+                    }
+                  </div>
+                  <h3 class="text-base font-bold text-slate-900 mt-0.5">${opt.titleTh}</h3>
+                </div>
+                <div class="text-right">
+                  <div class="text-xs text-slate-500">รวมสั่งซื้อต่อบ่อ</div>
+                  <div class="text-sm font-bold text-sky-900 num-mono">${fmt(opt.quantities.totalOrderVolumeM3, 1)} m³ (${fmt(opt.quantities.totalOrderMassTons, 1)} ตัน)</div>
+                </div>
+              </div>
+
+              <!-- Addition Quantities Box -->
+              <div class="space-y-2 mb-3">
+                <!-- Sand Quantity -->
+                <div class="p-2.5 rounded-lg ${qS.depthAddCm > 0.1 ? 'bg-amber-50 border border-amber-300' : 'bg-slate-50 border border-slate-200 opacity-60'} text-xs">
+                  <div class="flex items-center justify-between font-bold text-amber-950">
+                    <span>🟨 เติมทราย (Silica Sand):</span>
+                    <span class="num-mono text-sm">${qS.depthAddCm > 0.1 ? `+${fmt(qS.depthAddCm, 1)} ซม.` : 'ไม่เติม (0 ซม.)'}</span>
+                  </div>
+                  ${
+                    qS.depthAddCm > 0.1
+                      ? `<div class="flex justify-between text-[11px] text-amber-900 mt-1 num-mono">
+                           <span>สุทธิ ${fmt(qS.netVolumeM3, 1)} m³ | สั่งซื้อ <strong>${fmt(qS.orderVolumeM3, 1)} m³ (${fmt(qS.orderMassTons, 1)} ตัน)</strong></span>
+                           <span>ES ${fmt(opt.supplySpec.sand.es, 2)} / UC ${fmt(opt.supplySpec.sand.uc, 2)}</span>
+                         </div>`
+                      : ''
+                  }
+                </div>
+
+                <!-- Anthracite Quantity -->
+                <div class="p-2.5 rounded-lg ${qA.depthAddCm > 0.1 ? 'bg-slate-800 text-white border border-slate-700' : 'bg-slate-50 border border-slate-200 opacity-60'} text-xs">
+                  <div class="flex items-center justify-between font-bold ${qA.depthAddCm > 0.1 ? 'text-sky-300' : 'text-slate-600'}">
+                    <span>⬛ เติมแอนทราไซต์ (Anthracite):</span>
+                    <span class="num-mono text-sm">${qA.depthAddCm > 0.1 ? `+${fmt(qA.depthAddCm, 1)} ซม.` : 'ไม่เติม (0 ซม.)'}</span>
+                  </div>
+                  ${
+                    qA.depthAddCm > 0.1
+                      ? `<div class="flex justify-between text-[11px] text-slate-200 mt-1 num-mono">
+                           <span>สุทธิ ${fmt(qA.netVolumeM3, 1)} m³ | สั่งซื้อ <strong>${fmt(qA.orderVolumeM3, 1)} m³ (${fmt(qA.orderMassTons, 1)} ตัน)</strong></span>
+                           <span>ES ${fmt(opt.supplySpec.anthracite.es, 2)} / UC ${fmt(opt.supplySpec.anthracite.uc, 2)}</span>
+                         </div>`
+                      : ''
+                  }
+                </div>
+              </div>
+
+              <!-- Resulting Performance Metrics -->
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs space-y-1.5 num-mono">
+                <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider font-sans">สมรรถนะบ่อกรองหลังเติม:</div>
+                <div class="flex justify-between items-center">
+                  <span class="text-slate-600 font-sans">• ประสิทธิภาพบ่อกรอง (% Removal):</span>
+                  <strong class="text-sm text-emerald-700">${fmt(p.operationalRemovalPct, 2)}% (${fmt(p.expectedEffluentNTU, 3)} NTU)</strong>
+                </div>
+                <div class="flex justify-between items-center">
+                  <span class="text-slate-600 font-sans">• Filtration Rate ที่เหมาะสม:</span>
+                  <strong class="text-sm text-sky-900">${fmt(p.allowableFiltrationRateMph, 2)} m/h</strong>
+                </div>
+                <div class="flex justify-between items-center">
+                  <span class="text-slate-600 font-sans">• รอบการกรอง (Run Time) / Head Loss:</span>
+                  <strong class="text-slate-900">${fmt(p.governingRunTimeHours, 1)} ชม. / ${fmt(p.cleanBedHeadLossM, 2)} mWC</strong>
+                </div>
+                <div class="flex justify-between items-center pt-1 border-t border-slate-200 text-[11px]">
+                  <span class="text-slate-500 font-sans">• ชั้นกรองหลังเติม (ทราย + แอนทราไซต์):</span>
+                  <span class="text-slate-800 font-semibold">${fmt(b.sandDepthM, 2)}m + ${fmt(b.anthraciteDepthM, 2)}m (รวม ${fmt(b.totalDepthM, 2)}m)</span>
+                </div>
+              </div>
+
+              <div class="mt-2.5 text-xs text-slate-600 leading-relaxed">
+                ${opt.noteTh}
+              </div>
+            </div>
+
+            <div class="mt-3 pt-2.5 border-t border-slate-200 flex justify-end no-print">
+              <button type="button" class="btn-secondary text-xs w-full justify-center load-strategy-to-sim-btn"
+                data-sand-cm="${qS.depthAddCm.toFixed(1)}"
+                data-sand-es="${opt.supplySpec.sand ? opt.supplySpec.sand.es.toFixed(2) : calc.sandResult.design.es.toFixed(2)}"
+                data-sand-uc="${opt.supplySpec.sand ? opt.supplySpec.sand.uc.toFixed(2) : calc.sandResult.design.uc.toFixed(2)}"
+                data-anth-cm="${qA.depthAddCm.toFixed(1)}"
+                data-anth-es="${opt.supplySpec.anthracite ? opt.supplySpec.anthracite.es.toFixed(2) : '1.40'}"
+                data-anth-uc="${opt.supplySpec.anthracite ? opt.supplySpec.anthracite.uc.toFixed(2) : '1.40'}">
+                🧪 นำค่านี้ไปทดสอบปรับแต่งต่อในช่องจำลองด้านล่าง
+              </button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    grid.querySelectorAll('.load-strategy-to-sim-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        el('simSandUnit').value = 'cm';
+        el('lblSimSandVal').textContent = 'ปริมาณที่เติม (ซม.)';
+        el('simSandVal').value = btn.getAttribute('data-sand-cm');
+        el('simSandES').value = btn.getAttribute('data-sand-es');
+        el('simSandUC').value = btn.getAttribute('data-sand-uc');
+        el('simSandSkimCm').value = '0.0';
+
+        el('simAnthUnit').value = 'cm';
+        el('lblSimAnthVal').textContent = 'ปริมาณที่เติม (ซม.)';
+        el('simAnthVal').value = btn.getAttribute('data-anth-cm');
+        el('simAnthES').value = btn.getAttribute('data-anth-es');
+        el('simAnthUC').value = btn.getAttribute('data-anth-uc');
+        el('simAnthSkimCm').value = '0.0';
+
+        runCustomSimulator();
+        el('customSimResultContainer').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    });
+  }
+
+  // =========================================================================
+  // STEP 4: INTERACTIVE "WHAT-IF" CUSTOM ADDITION SIMULATOR
+  // =========================================================================
+  function runCustomSimulator() {
+    const calc = state.lastCalculation;
+    if (!calc || !el('customSimResultContainer')) return;
+
+    const sandUnit = el('simSandUnit').value;
+    const sandVal = Math.max(0, Number(el('simSandVal').value) || 0);
+    const sandES = Math.max(0.2, Number(el('simSandES').value) || 0.95);
+    const sandUC = Math.max(1.05, Number(el('simSandUC').value) || 1.40);
+    const sandSkimCm = Math.max(0, Number(el('simSandSkimCm').value) || 0);
+
+    const anthUnit = el('simAnthUnit').value;
+    const anthVal = Math.max(0, Number(el('simAnthVal').value) || 0);
+    const anthES = Math.max(0.3, Number(el('simAnthES').value) || 1.40);
+    const anthUC = Math.max(1.05, Number(el('simAnthUC').value) || 1.40);
+    const anthSkimCm = Math.max(0, Number(el('simAnthSkimCm').value) || 0);
+
+    const testVf = Math.max(1.0, Number(el('simTestVf').value) || calc.filtrationRate);
+
+    const sim = M.simulateCustomAddition({
+      preset: calc.preset,
+      filterArea: calc.filterArea,
+      currentSand: {
+        depthM: Number(el('currDepthSand').value) || 0,
+        es: Number(el('currESSand').value) || 0.95,
+        uc: Number(el('currUCSand').value) || 1.40
+      },
+      currentAnthracite: {
+        depthM: calc.preset.layers.anthracite.enabled ? Number(el('currDepthAnth').value) || 0 : 0,
+        es: Number(el('currESAnth').value) || 1.40,
+        uc: Number(el('currUCAnth').value) || 1.40
+      },
+      addSand: {
+        inputMode: sandUnit,
+        value: sandVal,
+        es: sandES,
+        uc: sandUC,
+        skimCm: sandSkimCm
+      },
+      addAnthracite: {
+        inputMode: anthUnit,
+        value: anthVal,
+        es: anthES,
+        uc: anthUC,
+        skimCm: anthSkimCm
+      },
+      filtrationRateMph: testVf,
+      tempC: calc.waterTemp,
+      influentTurbidityNTU: calc.influentNTU
+    });
+
+    const bef = sim.beforePerformance;
+    const aft = sim.afterPerformance;
+    const d = sim.deltas;
+    const qS = sim.addedQuantities.sand;
+    const qA = sim.addedQuantities.anthracite;
+    const b = sim.resultingBed;
+
+    const remSign = d.removalPctDelta >= 0 ? '+' : '';
+    const rateSign = d.allowableRateDeltaMph >= 0 ? '+' : '';
+    const runSign = d.runTimeDeltaHours >= 0 ? '+' : '';
+
+    el('customSimResultContainer').innerHTML = `
+      <div class="p-4 rounded-xl bg-white border border-sky-200 shadow-sm">
+        <!-- Top Summary Bar of Custom Addition -->
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-200 text-xs">
+          <div class="font-bold text-slate-900">
+            📌 สรุปปริมาณที่คุณระบุจำลอง (ทดสอบเดินระบบที่ Filtration Rate = <span class="num-mono text-sky-800">${fmt(testVf, 1)} m/h</span>):
+          </div>
+          <div class="flex flex-wrap items-center gap-3 num-mono">
+            <span class="px-2.5 py-1 rounded bg-amber-100 text-amber-950 font-semibold">
+              🟨 เติมทราย: +${fmt(qS.depthAddCm, 1)} ซม. (${fmt(qS.netVolumeM3, 1)} m³ / ${fmt(qS.netMassTons, 1)} ตัน) [ES ${fmt(qS.supplyES, 2)}, UC ${fmt(qS.supplyUC, 2)}]
+            </span>
+            <span class="px-2.5 py-1 rounded bg-slate-800 text-sky-200 font-semibold">
+              ⬛ เติมแอนทราไซต์: +${fmt(qA.depthAddCm, 1)} ซม. (${fmt(qA.netVolumeM3, 1)} m³ / ${fmt(qA.netMassTons, 1)} ตัน) [ES ${fmt(qA.supplyES, 2)}, UC ${fmt(qA.supplyUC, 2)}]
+            </span>
+          </div>
+        </div>
+
+        <!-- 4 Side-by-Side Before vs After KPIs -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <!-- 1. % Removal -->
+          <div class="p-3 rounded-lg bg-sky-50/80 border border-sky-200">
+            <div class="font-bold text-sky-950">1. ประสิทธิภาพบ่อกรอง (% Removal)</div>
+            <div class="flex items-baseline justify-between mt-1.5 num-mono">
+              <div>
+                <span class="text-slate-500 font-sans">ก่อนเติม:</span>
+                <strong class="text-slate-700">${fmt(bef.operationalRemovalPct, 2)}%</strong>
+              </div>
+              <div>
+                <span class="text-slate-500 font-sans">หลังเติม:</span>
+                <strong class="text-lg text-emerald-700">${fmt(aft.operationalRemovalPct, 2)}%</strong>
+              </div>
+            </div>
+            <div class="mt-1.5 pt-1.5 border-t border-sky-200/70 flex justify-between text-[11px] num-mono">
+              <span class="text-sky-900">เปลี่ยนแปลง: <strong>${remSign}${fmt(d.removalPctDelta, 2)}%</strong></span>
+              <span class="text-slate-700">น้ำกรอง: <strong>${fmt(aft.expectedEffluentNTU, 3)} NTU</strong> (${fmt(aft.operationalLogRemoval, 2)} Log)</span>
+            </div>
+          </div>
+
+          <!-- 2. Allowable Filtration Rate -->
+          <div class="p-3 rounded-lg bg-emerald-50/70 border border-emerald-200">
+            <div class="font-bold text-emerald-950">2. Filtration Rate ที่รองรับได้</div>
+            <div class="flex items-baseline justify-between mt-1.5 num-mono">
+              <div>
+                <span class="text-slate-500 font-sans">ก่อนเติม:</span>
+                <strong class="text-slate-700">${fmt(bef.allowableFiltrationRateMph, 2)} m/h</strong>
+              </div>
+              <div>
+                <span class="text-slate-500 font-sans">หลังเติม:</span>
+                <strong class="text-lg text-emerald-800">${fmt(aft.allowableFiltrationRateMph, 2)} m/h</strong>
+              </div>
+            </div>
+            <div class="mt-1.5 pt-1.5 border-t border-emerald-200/70 flex justify-between text-[11px] num-mono">
+              <span class="text-emerald-900">เพิ่มขึ้น: <strong>${rateSign}${fmt(d.allowableRateDeltaMph, 2)} m/h</strong></span>
+              <span class="text-slate-700">ผลิตน้ำ: <strong>${fmt(aft.allowableFlowPerFilterM3d, 0)} m³/วัน</strong></span>
+            </div>
+          </div>
+
+          <!-- 3. Filter Run Time -->
+          <div class="p-3 rounded-lg bg-slate-50 border border-slate-200">
+            <div class="font-bold text-slate-800">3. ระยะเวลารอบการกรอง (Run Time)</div>
+            <div class="flex items-baseline justify-between mt-1.5 num-mono">
+              <div>
+                <span class="text-slate-500 font-sans">ก่อนเติม:</span>
+                <strong class="text-slate-700">${fmt(bef.governingRunTimeHours, 1)} ชม.</strong>
+              </div>
+              <div>
+                <span class="text-slate-500 font-sans">หลังเติม:</span>
+                <strong class="text-lg text-sky-900">${fmt(aft.governingRunTimeHours, 1)} ชม.</strong>
+              </div>
+            </div>
+            <div class="mt-1.5 pt-1.5 border-t border-slate-200 flex justify-between text-[11px] num-mono">
+              <span class="text-slate-700">$t_B$ ${fmt(aft.tBreakthroughHours, 1)} / $t_{HL}$ ${fmt(aft.tHeadLossHours, 1)} ชม.</span>
+              <span class="text-sky-900">(${runSign}${fmt(d.runTimeDeltaHours, 1)} ชม.)</span>
+            </div>
+          </div>
+
+          <!-- 4. Resulting Composite Media & Head Loss -->
+          <div class="p-3 rounded-lg bg-slate-50 border border-slate-200">
+            <div class="font-bold text-slate-800">4. สเปกผสมหลังเติม &amp; Head Loss</div>
+            <div class="mt-1.5 space-y-0.5 text-[11px] num-mono">
+              <div class="flex justify-between">
+                <span class="text-slate-600 font-sans">ทราย (${fmt(b.sandDepthM, 2)}m):</span>
+                <strong>ES ${fmt(b.sandES, 3)} / UC ${fmt(b.sandUC, 2)}</strong>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-600 font-sans">แอนทราไซต์ (${fmt(b.anthraciteDepthM, 2)}m):</span>
+                <strong>${b.anthraciteDepthM > 0.01 ? `ES ${fmt(b.anthraciteES, 3)} / UC ${fmt(b.anthraciteUC, 2)}` : 'ไม่มี (0.00m)'}</strong>
+              </div>
+              <div class="flex justify-between pt-1 border-t border-slate-200">
+                <span class="text-slate-600 font-sans">Head Loss / $\\sum(L/d_{10})$:</span>
+                <strong class="text-sky-900">${fmt(aft.cleanBedHeadLossM, 2)} mWC / ${fmt(aft.totalLdRatio, 0)}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   // Helper to get the selected mode's metrics for a layer
@@ -1703,6 +2240,7 @@
       'inputFilterName',
       'inputFilterArea',
       'inputFiltrationRate',
+      'inputInfluentNTU',
       'inputWaterTemp',
       'inputSkimAllowance',
       'inputCompactAllowance',
@@ -1734,6 +2272,75 @@
         node.addEventListener('input', runMainCalculation);
         node.addEventListener('change', runMainCalculation);
       }
+    });
+
+    // Custom "What-If" Simulator input bindings
+    const simInputIds = [
+      'simSandUnit',
+      'simSandVal',
+      'simSandES',
+      'simSandUC',
+      'simSandSkimCm',
+      'simAnthUnit',
+      'simAnthVal',
+      'simAnthES',
+      'simAnthUC',
+      'simAnthSkimCm',
+      'simTestVf'
+    ];
+    simInputIds.forEach((id) => {
+      const node = el(id);
+      if (node) {
+        node.addEventListener('input', runCustomSimulator);
+        node.addEventListener('change', runCustomSimulator);
+      }
+    });
+
+    if (el('simSandUnit')) {
+      el('simSandUnit').addEventListener('change', () => {
+        const u = el('simSandUnit').value;
+        el('lblSimSandVal').textContent =
+          u === 'm3' ? 'ปริมาณที่เติม (m³)' : u === 'tons' ? 'ปริมาณที่เติม (ตัน)' : 'ปริมาณที่เติม (ซม.)';
+      });
+    }
+
+    if (el('simAnthUnit')) {
+      el('simAnthUnit').addEventListener('change', () => {
+        const u = el('simAnthUnit').value;
+        el('lblSimAnthVal').textContent =
+          u === 'm3' ? 'ปริมาณที่เติม (m³)' : u === 'tons' ? 'ปริมาณที่เติม (ตัน)' : 'ปริมาณที่เติม (ซม.)';
+      });
+    }
+
+    document.querySelectorAll('.sim-quick-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mode = btn.getAttribute('data-preset-sim');
+        const calc = state.lastCalculation;
+        if (!calc || !calc.strategyEval) return;
+
+        el('simSandUnit').value = 'cm';
+        el('lblSimSandVal').textContent = 'ปริมาณที่เติม (ซม.)';
+        el('simAnthUnit').value = 'cm';
+        el('lblSimAnthVal').textContent = 'ปริมาณที่เติม (ซม.)';
+        el('simSandSkimCm').value = '0.0';
+        el('simAnthSkimCm').value = '0.0';
+
+        if (mode === 'recommended') {
+          const recOpt = calc.strategyEval.options[calc.strategyEval.recommendedOptionId];
+          el('simSandVal').value = recOpt.quantities.sand.depthAddCm.toFixed(1);
+          el('simAnthVal').value = recOpt.quantities.anthracite.depthAddCm.toFixed(1);
+        } else if (mode === 'sand20') {
+          el('simSandVal').value = '20.0';
+          el('simAnthVal').value = '0.0';
+        } else if (mode === 'anth25') {
+          el('simSandVal').value = '0.0';
+          el('simAnthVal').value = '25.0';
+        } else if (mode === 'zero') {
+          el('simSandVal').value = '0.0';
+          el('simAnthVal').value = '0.0';
+        }
+        runCustomSimulator();
+      });
     });
 
     // Multi-point random sampling panel toggle & actions

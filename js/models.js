@@ -1440,6 +1440,921 @@
     };
   }
 
+  // =========================================================================
+  // 6. FUNDAMENTAL FILTRATION EFFICIENCY (TUFENKJI-ELIMELECH / YAO MODEL),
+  //    ALLOWABLE FILTRATION RATE, 3 ADDITION OPTIONS & CUSTOM SIMULATOR
+  // =========================================================================
+
+  /**
+   * Stratified Tufenkji & Elimelech (2004) / Yao (1971) Single-Collector Contact Efficiency η
+   * and Filter Coefficient λ (m⁻¹) integrated across 5 log-normal strata of a media layer.
+   * Reference: MWH's Water Treatment (3rd Ed.), Chapter 11, Eq. 11-36 to 11-48 (pp. 778-788).
+   */
+  function calculateLayerFiltrationCoefficient(layerProps, depthM, esMM, uc, filtrationRateMph, tempC, options = {}) {
+    const L = Math.max(0, Number(depthM) || 0);
+    if (L <= 1e-4) {
+      return {
+        depthM: 0,
+        meanEtaD: 0,
+        meanEtaI: 0,
+        meanEtaG: 0,
+        meanEta: 0,
+        lambdaClean: 0,
+        lambdaRipened: 0,
+        lnC0_C_clean: 0,
+        lnC0_C_ripened: 0,
+        ldRatio: 0,
+        effectiveLdRatio: 0
+      };
+    }
+
+    const es = Math.max(0.15, Number(esMM) || 0.90);
+    const safeUC = Math.max(1.05, Number(uc) || 1.40);
+    const vF_mph = Math.max(1.0, Number(filtrationRateMph) || 11.0);
+    const vF = vF_mph / 3600.0; // m/s
+    const wp = getWaterProperties(tempC);
+
+    const isAnth = layerProps.type === 'anthracite';
+    const eps = Number(layerProps.porosity) || (isAnth ? 0.50 : 0.43);
+    const psi = Number(layerProps.sphericity) || (isAnth ? 0.55 : 0.78);
+    const refUC = Number(layerProps.designUC) || (isAnth ? 1.45 : 1.45);
+
+    // Representative floc particle diameter d_p (m) and collision attachment efficiency α
+    const dpUm = Number(options.dpUm) || 15.0; // 15 µm typical coagulated alum/polymer pin-floc entering filter
+    const dp = dpUm * 1e-6;
+    const alpha = Number(options.alpha) || 0.62; // destabilized floc attachment factor (MWH p. 777: α ≈ 0.5-0.8 for good coagulation)
+    const kB = 1.380649e-23; // Boltzmann constant (J/K)
+    const TK = wp.tempC + 273.15; // Absolute temperature (K)
+    const HA = 1.0e-20; // Hamaker constant (J) for alum/silica/anthracite in water (MWH Table 11-5)
+    const rhoP = 1045.0; // Effective density of coagulated floc (kg/m³)
+
+    // Happel sphere-in-cell pore geometry number A_s (MWH Eq. 11-45)
+    const gamma = Math.cbrt(1.0 - eps);
+    const g5 = Math.pow(gamma, 5);
+    const g6 = Math.pow(gamma, 6);
+    const As = (2.0 * (1.0 - g5)) / (2.0 - 3.0 * gamma + 3.0 * g5 - 2.0 * g6);
+
+    const quantiles = [0.10, 0.30, 0.50, 0.70, 0.90];
+    let sumEtaD = 0;
+    let sumEtaI = 0;
+    let sumEtaG = 0;
+    let sumEta = 0;
+    let sumLambda = 0;
+
+    for (let i = 0; i < quantiles.length; i++) {
+      const dc_mm = logNormalPercentile(quantiles[i], es, safeUC);
+      const dc = dc_mm * 1e-3; // m
+
+      const NR = dp / dc;
+      const NPe = (3.0 * Math.PI * wp.mu * dp * dc * vF) / (kB * TK);
+      const NvdW = HA / (kB * TK);
+      const vs = (wp.g * (rhoP - wp.rhoW) * dp * dp) / (18.0 * wp.mu);
+      const NG = vs / vF;
+      const NA = HA / (3.0 * Math.PI * wp.mu * dp * dp * vF);
+
+      // Tufenkji & Elimelech (2004) correlation (MWH Eq. 11-46 to 11-48)
+      const etaD = 2.4 * Math.cbrt(As) * Math.pow(NR, -0.081) * Math.pow(NPe, -0.715) * Math.pow(NvdW, 0.052);
+      const etaI = 0.55 * As * Math.pow(NR, 1.675) * Math.pow(NA, 0.125);
+      const etaG = 0.22 * Math.pow(NR, -0.24) * Math.pow(NG, 1.11) * Math.pow(NvdW, 0.053);
+      const eta = etaD + etaI + etaG;
+
+      // Yao / Iwasaki filter coefficient λ (m⁻¹) (MWH Eq. 11-39)
+      const lam = ((3.0 * (1.0 - eps)) / (2.0 * psi * dc)) * alpha * eta;
+
+      sumEtaD += etaD / quantiles.length;
+      sumEtaI += etaI / quantiles.length;
+      sumEtaG += etaG / quantiles.length;
+      sumEta += eta / quantiles.length;
+      sumLambda += lam / quantiles.length;
+    }
+
+    // Channeling & maldistribution penalty when UC is excessive (> 1.50)
+    const ucChannelFactor = Math.exp(-0.25 * Math.pow(Math.max(0, safeUC - 1.48), 2));
+    // Hydrodynamic shear detachment factor on coagulated alum/polymer floc (Ives & Sholji 1965; Cleasby 1969):
+    // Interstitial pore velocity shear reduces net floc attachment efficiency α as filtration rate increases
+    const shearFactor = Math.pow(11.0 / vF_mph, 0.55);
+
+    const lambdaClean = sumLambda * ucChannelFactor * shearFactor;
+
+    // Ripened filter factor (O'Melia & Ali, 1978; MWH Sec. 11-5):
+    // Retained flocs during ripening coat filter grains and increase collector collision area by ~2.3-2.5x
+    const ripeningMultiplier = isAnth ? 2.40 : 2.35;
+    const lambdaRipened = lambdaClean * ripeningMultiplier;
+
+    const ldRatio = (L * 1000.0) / es;
+    const effectiveLdRatio = ldRatio * Math.pow(refUC / safeUC, 0.35);
+
+    return {
+      depthM: L,
+      es,
+      uc: safeUC,
+      meanEtaD: sumEtaD,
+      meanEtaI: sumEtaI,
+      meanEtaG: sumEtaG,
+      meanEta: sumEta,
+      lambdaClean,
+      lambdaRipened,
+      lnC0_C_clean: lambdaClean * L,
+      lnC0_C_ripened: lambdaRipened * L,
+      ldRatio,
+      effectiveLdRatio
+    };
+  }
+
+  /**
+   * Evaluate Full Filter Performance (% Removal, Log Removal, Effluent NTU,
+   * Allowable Filtration Rate m/h, Filter Run Time h, Clean-Bed Head Loss mWC)
+   * for any given Sand and/or Anthracite bed configuration.
+   */
+  function calculateFilterPerformance(params) {
+    const {
+      preset = PLANT_PRESETS.phase1_2,
+      sand = { enabled: true, depthM: 1.20, es: 0.95, uc: 1.40 },
+      anthracite = { enabled: false, depthM: 0.0, es: 1.40, uc: 1.40 },
+      filtrationRateMph = null,
+      tempC = 28.0,
+      influentTurbidityNTU = 2.0,
+      targetEffluentNTU = 0.10
+    } = params;
+
+    const vF = Number(filtrationRateMph) > 0 ? Number(filtrationRateMph) : Number(preset.normalFiltrationRate) || 11.0;
+    const HT = Number(preset.limitingHeadLoss) || 2.00;
+    const area = Number(preset.unitArea) || 112.0;
+    const C0_NTU = Math.max(0.2, Number(influentTurbidityNTU) || 2.0);
+    const C0_mgL = C0_NTU * 1.25; // typical suspended solids to NTU ratio after alum coagulation
+
+    const sandProps = (preset.layers && preset.layers.sand) || PLANT_PRESETS.phase1_2.layers.sand;
+    const anthProps = (preset.layers && preset.layers.anthracite) || PLANT_PRESETS.phase3.layers.anthracite;
+
+    const L_sand = sand && sand.enabled !== false ? Math.max(0, Number(sand.depthM) || 0) : 0;
+    const ES_sand = sand && Number(sand.es) > 0 ? Number(sand.es) : sandProps.designES || 0.95;
+    const UC_sand = sand && Number(sand.uc) > 1.0 ? Number(sand.uc) : sandProps.designUC || 1.40;
+
+    const L_anth = anthracite && anthracite.enabled !== false ? Math.max(0, Number(anthracite.depthM) || 0) : 0;
+    const ES_anth = anthracite && Number(anthracite.es) > 0 ? Number(anthracite.es) : anthProps.designES || 1.40;
+    const UC_anth = anthracite && Number(anthracite.uc) > 1.0 ? Number(anthracite.uc) : anthProps.designUC || 1.40;
+
+    // Helper to compute metrics at any test velocity vTest
+    function evalAtVelocity(vTest) {
+      const sandTE = calculateLayerFiltrationCoefficient(sandProps, L_sand, ES_sand, UC_sand, vTest, tempC);
+      const anthTE = calculateLayerFiltrationCoefficient(anthProps, L_anth, ES_anth, UC_anth, vTest, tempC);
+
+      // Dual-media interfacial stratification synergy (when coarse anthracite overlies finer sand)
+      const isDualBed = L_sand >= 0.25 && L_anth >= 0.20;
+      const dualSynergy = isDualBed ? 1.12 : 1.0;
+
+      const totalLnClean = (sandTE.lnC0_C_clean + anthTE.lnC0_C_clean) * dualSynergy;
+      const totalLnRipened = (sandTE.lnC0_C_ripened + anthTE.lnC0_C_ripened) * dualSynergy;
+
+      const cleanRemovalPct = (1.0 - Math.exp(-totalLnClean)) * 100.0;
+      const operationalRemovalPct = (1.0 - Math.exp(-totalLnRipened)) * 100.0;
+      const cleanLogRemoval = totalLnClean / Math.LN10;
+      const operationalLogRemoval = totalLnRipened / Math.LN10;
+
+      // Non-filterable background dissolved/colloidal scatter floor (~0.018 NTU)
+      const rawEffluentNTU = C0_NTU * Math.exp(-totalLnRipened);
+      const expectedEffluentNTU = Math.max(0.018, rawEffluentNTU);
+
+      // Clean-bed head loss (mWC)
+      const hlSand = calculateCleanBedHeadLoss(sandProps, L_sand, ES_sand, UC_sand, vTest, tempC);
+      const hlAnth = calculateCleanBedHeadLoss(anthProps, L_anth, ES_anth, UC_anth, vTest, tempC);
+      const underdrainLossM = 0.12 * Math.pow(vTest / 11.0, 2); // nozzle/underdrain loss
+      const totalCleanHeadLossM = hlSand.totalHeadLoss + hlAnth.totalHeadLoss + underdrainLossM;
+
+      // Filter Run Time:
+      // 1. Breakthrough time t_B (h) scales with total collector capacity (lnC0_C_ripened) and inversely with v_F * C_0
+      // Calibrated so a design bed (lnC0_C_ripened ≈ 4.1 at v_F = 11 m/h, C_0 = 2.5 mg/L) has t_B ≈ 46 h
+      const storageFactorDual = isDualBed ? 1.25 : 1.0; // dual media stores more floc in upper anthracite before breakthrough
+      const tBreakthroughHours =
+        ((totalLnRipened / 4.0) * 44.0 * storageFactorDual * (11.0 / vTest) * (2.5 / C0_mgL));
+
+      // 2. Head-loss limit time t_HL (h)
+      // Surface cake clogging occurs much faster on fine sand than on coarse high-porosity anthracite!
+      const netAvailableHeadM = Math.max(0.05, HT - totalCleanHeadLossM);
+      // Top collector size & porosity govern solids head-loss buildup rate k_HL.
+      // Coarser top layer (anthracite) and higher porosity allow deep floc penetration -> much slower head loss buildup.
+      // However, if anthracite layer is thin (< 0.55 m), flocs penetrate through the thin anthracite and blind the fine sand interface!
+      const anthFraction = Math.min(1.0, Math.max(0.0, L_anth / 0.65));
+      const effectiveTopES = anthFraction * ES_anth + (1.0 - anthFraction) * ES_sand;
+      const effectiveTopUC = anthFraction * UC_anth + (1.0 - anthFraction) * UC_sand;
+      const effectiveTopPorosity =
+        anthFraction * (anthProps.porosity || 0.50) + (1.0 - anthFraction) * (sandProps.porosity || 0.43);
+      const totalDepthM = L_sand + L_anth;
+
+      const penetrationFactor =
+        Math.pow(effectiveTopES / 0.95, 0.85) *
+        Math.pow(effectiveTopPorosity / 0.43, 1.8) *
+        Math.pow(1.40 / effectiveTopUC, 0.45) *
+        Math.pow(Math.max(0.25, totalDepthM) / 1.20, 0.55);
+
+      const tHeadLossHours =
+        (netAvailableHeadM / 1.55) * 40.0 * penetrationFactor * (11.0 / vTest) * (2.5 / C0_mgL);
+
+      const governingRunTimeHours = Math.max(0, Math.min(tBreakthroughHours, tHeadLossHours));
+      const limitingFactor = tBreakthroughHours <= tHeadLossHours ? 'breakthrough' : 'headloss';
+
+      return {
+        vTest,
+        sandTE,
+        anthTE,
+        totalLnClean,
+        totalLnRipened,
+        cleanRemovalPct,
+        operationalRemovalPct,
+        cleanLogRemoval,
+        operationalLogRemoval,
+        expectedEffluentNTU,
+        hlSandM: hlSand.totalHeadLoss,
+        hlAnthM: hlAnth.totalHeadLoss,
+        underdrainLossM,
+        totalCleanHeadLossM,
+        netAvailableHeadM,
+        tBreakthroughHours,
+        tHeadLossHours,
+        governingRunTimeHours,
+        limitingFactor,
+        ufrvM3m2: vTest * governingRunTimeHours
+      };
+    }
+
+    // 1. Evaluate at operating velocity vF
+    const currentPerf = evalAtVelocity(vF);
+
+    // 2. Evaluate Design Reference Performance at preset.normalFiltrationRate
+    const designSandEnabled = preset.layers.sand && preset.layers.sand.enabled;
+    const designAnthEnabled = preset.layers.anthracite && preset.layers.anthracite.enabled;
+    const designSandL = designSandEnabled ? preset.layers.sand.designDepth : 0;
+    const designAnthL = designAnthEnabled ? preset.layers.anthracite.designDepth : 0;
+    const designNormalRate = Number(preset.normalFiltrationRate) || 11.0;
+
+    const designSandTE = calculateLayerFiltrationCoefficient(
+      sandProps,
+      designSandL,
+      preset.layers.sand ? preset.layers.sand.designES : 0.95,
+      preset.layers.sand ? preset.layers.sand.designUC : 1.40,
+      designNormalRate,
+      tempC
+    );
+    const designAnthTE = calculateLayerFiltrationCoefficient(
+      anthProps,
+      designAnthL,
+      preset.layers.anthracite ? preset.layers.anthracite.designES : 1.40,
+      preset.layers.anthracite ? preset.layers.anthracite.designUC : 1.40,
+      designNormalRate,
+      tempC
+    );
+    const designDualSynergy = designSandL >= 0.25 && designAnthL >= 0.20 ? 1.12 : 1.0;
+    const designTargetLnRipened = (designSandTE.lnC0_C_ripened + designAnthTE.lnC0_C_ripened) * designDualSynergy;
+    const designTargetRemovalPct = (1.0 - Math.exp(-designTargetLnRipened)) * 100.0;
+
+    // 3. Solve for Allowable Filtration Rate v_F,allowable (m/h) of the current bed:
+    // Find max vTest in [1.0, 16.0] m/h where:
+    //   (a) totalLnRipened(vTest) >= 0.985 * designTargetLnRipened (maintains design removal efficiency!)
+    //   (b) governingRunTimeHours(vTest) >= 24.0 h
+    //   (c) totalCleanHeadLossM(vTest) <= 0.45 * HT
+    const totalDepthM = L_sand + L_anth;
+    let allowableFiltrationRateMph = 0;
+    if (totalDepthM > 0.15) {
+      let lowV = 1.0;
+      let highV = 15.5;
+      const targetLnThreshold = designTargetLnRipened * 0.985;
+      for (let iter = 0; iter < 45; iter++) {
+        const midV = 0.5 * (lowV + highV);
+        const testP = evalAtVelocity(midV);
+        const qualityOk = testP.totalLnRipened >= targetLnThreshold;
+        const runTimeOk = testP.governingRunTimeHours >= 24.0;
+        const headLossOk = testP.totalCleanHeadLossM <= 0.48 * HT;
+        if (qualityOk && runTimeOk && headLossOk) {
+          lowV = midV;
+        } else {
+          highV = midV;
+        }
+      }
+      allowableFiltrationRateMph = lowV;
+    }
+
+    const totalLdRatio = currentPerf.sandTE.ldRatio + currentPerf.anthTE.ldRatio;
+    const effectiveLdRatio = currentPerf.sandTE.effectiveLdRatio + currentPerf.anthTE.effectiveLdRatio;
+    const designLdRatio = designSandTE.ldRatio + designAnthTE.ldRatio;
+
+    // Status assessment
+    let statusLevel = 'good'; // 'good' | 'warning' | 'critical'
+    let statusSummaryTh = 'สมรรถนะบ่อกรองอยู่ในเกณฑ์มาตรฐาน (Design)';
+    if (
+      currentPerf.operationalRemovalPct < designTargetRemovalPct - 3.0 ||
+      allowableFiltrationRateMph < (preset.normalFiltrationRate || 11.0) * 0.78 ||
+      currentPerf.governingRunTimeHours < 20.0
+    ) {
+      statusLevel = 'critical';
+      statusSummaryTh = 'สมรรถนะบ่อกรองลดลงมาก เสี่ยงความขุ่นทะลุ (Breakthrough) หรือรอบกรองสั้น ต้องเติมสารกรองเร่งด่วน';
+    } else if (
+      currentPerf.operationalRemovalPct < designTargetRemovalPct - 0.8 ||
+      allowableFiltrationRateMph < (preset.normalFiltrationRate || 11.0) * 0.94 ||
+      currentPerf.governingRunTimeHours < 28.0
+    ) {
+      statusLevel = 'warning';
+      statusSummaryTh = 'สมรรถนะบ่อกรองเริ่มลดลงต่ำกว่าค่าออกแบบ ควรวางแผนเติมสารกรองหรือลด Filtration Rate ชั่วคราว';
+    }
+
+    return {
+      filtrationRateMph: vF,
+      allowableFiltrationRateMph,
+      allowableFlowPerFilterM3h: allowableFiltrationRateMph * area,
+      allowableFlowPerFilterM3d: allowableFiltrationRateMph * area * 24.0,
+      designFiltrationRateMph: preset.normalFiltrationRate || 11.0,
+      maxDesignFiltrationRateMph: preset.maxFiltrationRate || 12.0,
+      cleanRemovalPct: currentPerf.cleanRemovalPct,
+      operationalRemovalPct: currentPerf.operationalRemovalPct,
+      designTargetRemovalPct,
+      cleanLogRemoval: currentPerf.cleanLogRemoval,
+      operationalLogRemoval: currentPerf.operationalLogRemoval,
+      influentTurbidityNTU: C0_NTU,
+      expectedEffluentNTU: currentPerf.expectedEffluentNTU,
+      targetEffluentNTU,
+      meetsTurbidityTarget: currentPerf.expectedEffluentNTU <= targetEffluentNTU,
+      cleanBedHeadLossM: currentPerf.totalCleanHeadLossM,
+      hlSandM: currentPerf.hlSandM,
+      hlAnthM: currentPerf.hlAnthM,
+      underdrainLossM: currentPerf.underdrainLossM,
+      netAvailableHeadM: currentPerf.netAvailableHeadM,
+      limitingHeadLossM: HT,
+      tBreakthroughHours: currentPerf.tBreakthroughHours,
+      tHeadLossHours: currentPerf.tHeadLossHours,
+      governingRunTimeHours: currentPerf.governingRunTimeHours,
+      limitingFactor: currentPerf.limitingFactor,
+      limitingFactorTh:
+        currentPerf.limitingFactor === 'breakthrough'
+          ? 'ความขุ่นทะลุ (Turbidity Breakthrough)'
+          : 'ความดันสูญเสียเต็มพิกัด (Terminal Head Loss)',
+      ufrvM3m2: currentPerf.ufrvM3m2,
+      totalDepthM,
+      sandDepthM: L_sand,
+      anthraciteDepthM: L_anth,
+      sandLdRatio: currentPerf.sandTE.ldRatio,
+      anthraciteLdRatio: currentPerf.anthTE.ldRatio,
+      totalLdRatio,
+      effectiveLdRatio,
+      designLdRatio,
+      ldCapacityPctOfDesign: designLdRatio > 0 ? (effectiveLdRatio / designLdRatio) * 100.0 : 100.0,
+      statusLevel,
+      statusSummaryTh
+    };
+  }
+
+  /**
+   * Evaluate and Compare 3 Actionable Material Addition Strategies from Current Filter Condition:
+   * - Option 1: เติม แอนทราไซต์ + ทราย (Add Anthracite + Sand)
+   * - Option 2: เติม ทรายอย่างเดียว (Add Sand Only)
+   * - Option 3: เติม แอนทราไซต์อย่างเดียว (Add Anthracite Only)
+   * Plus Current State and Design Reference, with an automatic suitability recommendation.
+   */
+  function evaluateMediaAdditionStrategies(params) {
+    const {
+      preset = PLANT_PRESETS.phase1_2,
+      filterArea = preset.unitArea || 112.0,
+      numFilters = preset.numFilters || 14,
+      currentSand = { depthM: 0.90, es: 0.95, uc: 1.45 },
+      currentAnthracite = { depthM: 0.0, es: 1.40, uc: 1.45 },
+      supplySand = null,
+      supplyAnthracite = null,
+      filtrationRateMph = preset.normalFiltrationRate || 11.0,
+      tempC = 28.0,
+      influentTurbidityNTU = 2.0,
+      targetEffluentNTU = 0.10,
+      allowancePct = 10.0, // skimming + compaction allowance %
+      bagWeightKg = 1000
+    } = params;
+
+    const isDualDesign = preset.filterType === 'dual';
+    const area = Math.max(1.0, Number(filterArea) || 112.0);
+    const allowanceFactor = 1.0 + Math.max(0, Number(allowancePct) || 10.0) / 100.0;
+
+    const sandCfg = preset.layers.sand || PLANT_PRESETS.phase1_2.layers.sand;
+    const anthCfg = preset.layers.anthracite || PLANT_PRESETS.phase3.layers.anthracite;
+
+    const rhoSand = Number(sandCfg.bulkDensity) || 1510; // kg/m³
+    const rhoAnth = Number(anthCfg.bulkDensity) || 800; // kg/m³
+
+    const L_sand_design = sandCfg.enabled ? Number(sandCfg.designDepth) : 0.70;
+    const ES_sand_design = Number(sandCfg.designES) || 0.95;
+    const UC_sand_design = Number(sandCfg.designUC) || 1.40;
+
+    const L_anth_design = isDualDesign && anthCfg.enabled ? Number(anthCfg.designDepth) : 0.0;
+    const ES_anth_design = Number(anthCfg.designES) || 1.40;
+    const UC_anth_design = Number(anthCfg.designUC) || 1.40;
+
+    const L_total_design = isDualDesign ? L_sand_design + L_anth_design : L_sand_design;
+
+    // Supply specs (default to Design specs)
+    const ES_sand_new = supplySand && Number(supplySand.es) > 0 ? Number(supplySand.es) : ES_sand_design;
+    const UC_sand_new = supplySand && Number(supplySand.uc) > 1.0 ? Number(supplySand.uc) : UC_sand_design;
+    const ES_anth_new = supplyAnthracite && Number(supplyAnthracite.es) > 0 ? Number(supplyAnthracite.es) : ES_anth_design;
+    const UC_anth_new = supplyAnthracite && Number(supplyAnthracite.uc) > 1.0 ? Number(supplyAnthracite.uc) : UC_anth_design;
+
+    // Current state
+    const L_sand_curr = Math.max(0, Number(currentSand.depthM) || 0);
+    const ES_sand_curr = Math.max(0.2, Number(currentSand.es) || ES_sand_design);
+    const UC_sand_curr = Math.max(1.05, Number(currentSand.uc) || UC_sand_design);
+
+    const L_anth_curr = Math.max(0, Number(currentAnthracite.depthM) || 0);
+    const ES_anth_curr = Math.max(0.3, Number(currentAnthracite.es) || ES_anth_design);
+    const UC_anth_curr = Math.max(1.05, Number(currentAnthracite.uc) || UC_anth_design);
+
+    function calcQuantities(depthAddSandM, depthAddAnthM, depthSkimSandM = 0, depthSkimAnthM = 0) {
+      const dSand = Math.max(0, depthAddSandM);
+      const dAnth = Math.max(0, depthAddAnthM);
+      const volSandNet = dSand * area;
+      const volSandOrder = volSandNet * allowanceFactor;
+      const tonsSandNet = (volSandNet * rhoSand) / 1000.0;
+      const tonsSandOrder = (volSandOrder * rhoSand) / 1000.0;
+      const bagsSand = Math.ceil((tonsSandOrder * 1000.0) / bagWeightKg);
+
+      const volAnthNet = dAnth * area;
+      const volAnthOrder = volAnthNet * allowanceFactor;
+      const tonsAnthNet = (volAnthNet * rhoAnth) / 1000.0;
+      const tonsAnthOrder = (volAnthOrder * rhoAnth) / 1000.0;
+      const bagsAnth = Math.ceil((tonsAnthOrder * 1000.0) / bagWeightKg);
+
+      return {
+        sand: {
+          depthAddM: dSand,
+          depthAddCm: dSand * 100.0,
+          depthSkimM: Math.max(0, depthSkimSandM),
+          depthSkimCm: Math.max(0, depthSkimSandM) * 100.0,
+          netVolumeM3: volSandNet,
+          orderVolumeM3: volSandOrder,
+          netMassTons: tonsSandNet,
+          orderMassTons: tonsSandOrder,
+          numBags: bagsSand,
+          allFiltersOrderVolumeM3: volSandOrder * numFilters,
+          allFiltersOrderMassTons: tonsSandOrder * numFilters
+        },
+        anthracite: {
+          depthAddM: dAnth,
+          depthAddCm: dAnth * 100.0,
+          depthSkimM: Math.max(0, depthSkimAnthM),
+          depthSkimCm: Math.max(0, depthSkimAnthM) * 100.0,
+          netVolumeM3: volAnthNet,
+          orderVolumeM3: volAnthOrder,
+          netMassTons: tonsAnthNet,
+          orderMassTons: tonsAnthOrder,
+          numBags: bagsAnth,
+          allFiltersOrderVolumeM3: volAnthOrder * numFilters,
+          allFiltersOrderMassTons: tonsAnthOrder * numFilters
+        },
+        totalDepthAddCm: (dSand + dAnth) * 100.0,
+        totalOrderVolumeM3: volSandOrder + volAnthOrder,
+        totalOrderMassTons: tonsSandOrder + tonsAnthOrder
+      };
+    }
+
+    // 0. Design & Current Performance
+    const designPerformance = calculateFilterPerformance({
+      preset,
+      sand: { enabled: true, depthM: L_sand_design, es: ES_sand_design, uc: UC_sand_design },
+      anthracite: { enabled: isDualDesign, depthM: L_anth_design, es: ES_anth_design, uc: UC_anth_design },
+      filtrationRateMph,
+      tempC,
+      influentTurbidityNTU,
+      targetEffluentNTU
+    });
+
+    const currentPerformance = calculateFilterPerformance({
+      preset,
+      sand: { enabled: L_sand_curr > 0, depthM: L_sand_curr, es: ES_sand_curr, uc: UC_sand_curr },
+      anthracite: { enabled: L_anth_curr > 0, depthM: L_anth_curr, es: ES_anth_curr, uc: UC_anth_curr },
+      filtrationRateMph,
+      tempC,
+      influentTurbidityNTU,
+      targetEffluentNTU
+    });
+
+    // -----------------------------------------------------------------------
+    // OPTION 1: เติม แอนทราไซต์ + ทราย (Add Anthracite + Sand)
+    // -----------------------------------------------------------------------
+    let opt1SandAddM = 0;
+    let opt1AnthAddM = 0;
+    let opt1SandKeepM = L_sand_curr;
+    let opt1AnthKeepM = L_anth_curr;
+    let opt1NoteTh = '';
+
+    if (isDualDesign) {
+      // Restore both Sand and Anthracite to their Design depths
+      opt1SandKeepM = Math.min(L_sand_curr, L_sand_design);
+      opt1SandAddM = Math.max(0, L_sand_design - opt1SandKeepM);
+      opt1AnthKeepM = Math.min(L_anth_curr, L_anth_design);
+      opt1AnthAddM = Math.max(0, L_anth_design - opt1AnthKeepM);
+      opt1NoteTh = `เติมทรายชดเชยส่วนที่ขาด ${(opt1SandAddM * 100).toFixed(1)} ซม. (ให้ครบ ${L_sand_design.toFixed(2)} ม.) และเติมแอนทราไซต์ชดเชย ${(opt1AnthAddM * 100).toFixed(1)} ซม. (ให้ครบ ${L_anth_design.toFixed(2)} ม.) ตรงตามสเปก Dual-Media ของบ่อกรอง`;
+    } else {
+      // Single-Media filter (e.g. Phase 1 & 2, L_design = 1.20 m):
+      // Evaluate adding BOTH Sand + Anthracite to restore total depth (Dual-Media Capping)
+      const missingTotalSingleM = Math.max(0, L_total_design - L_sand_curr - L_anth_curr);
+      if (L_sand_curr < 0.70) {
+        opt1SandKeepM = L_sand_curr;
+        opt1SandAddM = 0.75 - L_sand_curr;
+        opt1AnthKeepM = L_anth_curr;
+        opt1AnthAddM = Math.max(0, L_total_design - 0.75 - L_anth_curr);
+      } else if (missingTotalSingleM > 0.02) {
+        // Split missing depth: 40% Sand + 60% Anthracite cap
+        opt1SandKeepM = L_sand_curr;
+        opt1SandAddM = Number((missingTotalSingleM * 0.40).toFixed(3));
+        opt1AnthKeepM = L_anth_curr;
+        opt1AnthAddM = Math.max(0, missingTotalSingleM - opt1SandAddM);
+      } else {
+        // Bed is already full -> skim 35 cm sand and replace with 35 cm anthracite cap
+        opt1SandKeepM = Math.max(0.75, L_sand_curr - 0.35);
+        opt1SandAddM = 0;
+        opt1AnthKeepM = L_anth_curr;
+        opt1AnthAddM = Math.max(0, L_total_design - opt1SandKeepM - L_anth_curr);
+      }
+      opt1NoteTh = `เติมทราย ${(opt1SandAddM * 100).toFixed(1)} ซม. ร่วมกับแอนทราไซต์ ${(opt1AnthAddM * 100).toFixed(1)} ซม. (รวมความลึก ${(opt1SandKeepM + opt1SandAddM + opt1AnthKeepM + opt1AnthAddM).toFixed(2)} ม.) ช่วยลด Head Loss และเพิ่มระยะเวลารอบกรอง แต่บ่อเฟส 1&2 ต้องระวังแอนทราไซต์ลอยหลุดขณะล้างย้อนด้วยลมพร้อมน้ำ`;
+    }
+
+    const opt1SandMix = computeCompositeDistribution([
+      { weight: opt1SandKeepM, es: ES_sand_curr, uc: UC_sand_curr },
+      { weight: opt1SandAddM, es: ES_sand_new, uc: UC_sand_new }
+    ]);
+    const opt1AnthMix = computeCompositeDistribution([
+      { weight: opt1AnthKeepM, es: ES_anth_curr, uc: UC_anth_curr },
+      { weight: opt1AnthAddM, es: ES_anth_new, uc: UC_anth_new }
+    ]);
+    const opt1FinalSandM = opt1SandKeepM + opt1SandAddM;
+    const opt1FinalAnthM = opt1AnthKeepM + opt1AnthAddM;
+    const opt1Perf = calculateFilterPerformance({
+      preset,
+      sand: { enabled: opt1FinalSandM > 0, depthM: opt1FinalSandM, es: opt1SandMix.es, uc: opt1SandMix.uc },
+      anthracite: { enabled: opt1FinalAnthM > 0, depthM: opt1FinalAnthM, es: opt1AnthMix.es, uc: opt1AnthMix.uc },
+      filtrationRateMph,
+      tempC,
+      influentTurbidityNTU,
+      targetEffluentNTU
+    });
+
+    // -----------------------------------------------------------------------
+    // OPTION 2: เติม ทรายอย่างเดียว (Add Sand Only)
+    // -----------------------------------------------------------------------
+    let opt2SandAddM = 0;
+    let opt2SandKeepM = L_sand_curr;
+    let opt2AnthKeepM = L_anth_curr;
+    let opt2NoteTh = '';
+
+    if (!isDualDesign) {
+      // Single-media sand (Phase 1 & 2): restore sand to L_sand_design (1.20 m)
+      opt2SandKeepM = Math.min(L_sand_curr, L_sand_design);
+      opt2SandAddM = Math.max(0, L_sand_design - opt2SandKeepM);
+      opt2AnthKeepM = 0;
+      opt2NoteTh = `เติมทรายกรองอย่างเดียว ${(opt2SandAddM * 100).toFixed(1)} ซม. ให้กลับสู่ระดับออกแบบ ${L_sand_design.toFixed(2)} ม. (ตรงตามการออกแบบดั้งเดิมของบ่อ Aquazur V เฟส 1 & 2)`;
+    } else {
+      // Dual-media filter: If only adding Sand (keeping existing anthracite as-is)
+      // If sand is missing, we at least restore missing sand; if anthracite is also missing and user asks "เติมทรายอย่างเดียว",
+      // we evaluate restoring total missing bed depth with sand (or restoring sand layer + partial sand compensation)
+      const missingSandM = Math.max(0, L_sand_design - L_sand_curr);
+      const missingTotalM = Math.max(0, L_total_design - (L_sand_curr + L_anth_curr));
+      // If missingSandM > 0 and missingAnthM == 0, add missingSandM.
+      // If anthracite is also missing, adding sand up to missingSandM + 0.65 * missingAnthM restores filtration capacity
+      opt2SandAddM = missingSandM > 0.01 ? Math.max(missingSandM, missingTotalM * 0.75) : missingTotalM * 0.75;
+      opt2NoteTh =
+        L_anth_curr < L_anth_design - 0.05
+          ? `คงแอนทราไซต์เดิมไว้ที่ ${L_anth_curr.toFixed(2)} ม. และเติมเฉพาะทรายอย่างเดียว ${(opt2SandAddM * 100).toFixed(1)} ซม. ให้ประสิทธิภาพการดักจับความขุ่น (% Removal) สูงมาก แต่จะทำให้ Clean-Bed Head Loss สูงขึ้นและหน้าทรายตันเร็วกว่าการเติมแอนทราไซต์`
+          : `เติมเฉพาะทรายที่ขาดหายไป ${(opt2SandAddM * 100).toFixed(1)} ซม. เพื่อคืนความหนาชั้นทรายสู่ระดับออกแบบ (${L_sand_design.toFixed(2)} ม.)`;
+    }
+
+    const opt2SandMix = computeCompositeDistribution([
+      { weight: opt2SandKeepM, es: ES_sand_curr, uc: UC_sand_curr },
+      { weight: opt2SandAddM, es: ES_sand_new, uc: UC_sand_new }
+    ]);
+    const opt2FinalSandM = opt2SandKeepM + opt2SandAddM;
+    const opt2FinalAnthM = opt2AnthKeepM;
+    const opt2Perf = calculateFilterPerformance({
+      preset,
+      sand: { enabled: opt2FinalSandM > 0, depthM: opt2FinalSandM, es: opt2SandMix.es, uc: opt2SandMix.uc },
+      anthracite: { enabled: opt2FinalAnthM > 0, depthM: opt2FinalAnthM, es: ES_anth_curr, uc: UC_anth_curr },
+      filtrationRateMph,
+      tempC,
+      influentTurbidityNTU,
+      targetEffluentNTU
+    });
+
+    // -----------------------------------------------------------------------
+    // OPTION 3: เติม แอนทราไซต์อย่างเดียว (Add Anthracite Only)
+    // -----------------------------------------------------------------------
+    let opt3AnthAddM = 0;
+    let opt3SandKeepM = L_sand_curr;
+    let opt3AnthKeepM = L_anth_curr;
+    let opt3NoteTh = '';
+
+    const missingTotalForAnthM = Math.max(0, L_total_design - (L_sand_curr + L_anth_curr));
+    opt3AnthAddM = missingTotalForAnthM;
+
+    if (isDualDesign) {
+      const sandDeficitCm = Math.max(0, (L_sand_design - L_sand_curr) * 100.0);
+      if (sandDeficitCm <= 5.0) {
+        opt3NoteTh = `ชั้นทรายเดิมยังอยู่เกือบครบ (ขาดเพียง ${sandDeficitCm.toFixed(1)} ซม.) การเติมเฉพาะแอนทราไซต์อย่างเดียวด้านบน ${(opt3AnthAddM * 100).toFixed(1)} ซม. ทำได้สะดวกที่สุด ไม่ต้องรื้อชั้นสารกรอง และให้สมรรถนะใกล้เคียง Design`;
+      } else {
+        opt3NoteTh = `คงชั้นทรายเดิมไว้ที่ ${L_sand_curr.toFixed(2)} ม. (ขาดอยู่ ${sandDeficitCm.toFixed(1)} ซม.) แล้วเติมแอนทราไซต์อย่างเดียวทับด้านบน ${(opt3AnthAddM * 100).toFixed(1)} ซม. ช่วยยืดเวลารอบกรอง (Head Loss ต่ำ) แต่ % Removal และการกันความขุ่นทะลุจะสู้การเติมทรายเพิ่มให้ครบไม่ได้`;
+      }
+    } else {
+      opt3NoteTh = `คงชั้นทรายเดิม (${L_sand_curr.toFixed(2)} ม.) ไว้ แล้วเติมแอนทราไซต์ปูทับด้านบน (Anthracite Capping) ${(opt3AnthAddM * 100).toFixed(1)} ซม. ให้ครบระดับ ${L_total_design.toFixed(2)} ม. ช่วยลด Head Loss และเพิ่ม Filter Run Time แต่ต้องระวังแอนทราไซต์ลอยหลุดช่วงล้างย้อนด้วยลมพร้อมน้ำ`;
+    }
+
+    const opt3AnthMix = computeCompositeDistribution([
+      { weight: opt3AnthKeepM, es: ES_anth_curr, uc: UC_anth_curr },
+      { weight: opt3AnthAddM, es: ES_anth_new, uc: UC_anth_new }
+    ]);
+    const opt3FinalSandM = opt3SandKeepM;
+    const opt3FinalAnthM = opt3AnthKeepM + opt3AnthAddM;
+    const opt3Perf = calculateFilterPerformance({
+      preset,
+      sand: { enabled: opt3FinalSandM > 0, depthM: opt3FinalSandM, es: ES_sand_curr, uc: UC_sand_curr },
+      anthracite: { enabled: opt3FinalAnthM > 0, depthM: opt3FinalAnthM, es: opt3AnthMix.es, uc: opt3AnthMix.uc },
+      filtrationRateMph,
+      tempC,
+      influentTurbidityNTU,
+      targetEffluentNTU
+    });
+
+    // -----------------------------------------------------------------------
+    // AUTOMATIC SUITABILITY RECOMMENDATION ENGINE
+    // -----------------------------------------------------------------------
+    let recommendedOptionId = 'option1_both';
+    let recommendedTitleTh = '';
+    let recommendationReasonTh = '';
+
+    const sandMissingCm = Math.max(0, (L_sand_design - L_sand_curr) * 100.0);
+    const anthMissingCm = Math.max(0, (L_anth_design - L_anth_curr) * 100.0);
+
+    if (!isDualDesign) {
+      // Single-Media Sand Plant (Phase 1 & 2 Aquazur V)
+      recommendedOptionId = 'option2_sand_only';
+      recommendedTitleTh = 'แนะนำ: เติมทรายอย่างเดียว (Sand Only)';
+      recommendationReasonTh =
+        `บ่อกรอง ${preset.shortName} ออกแบบเป็นระบบทรายชั้นเดียว (Single-Media Sand ความลึก ${L_sand_design.toFixed(2)} ม.) และใช้ระบบล้างย้อนด้วยลมพร้อมน้ำ (Simultaneous Air + Water Wash) ` +
+        `การเติมทรายอย่างเดียว ${(opt2SandAddM * 100).toFixed(1)} ซม. (สเปก ES ${ES_sand_new.toFixed(2)} มม., UC ${UC_sand_new.toFixed(2)}) จะให้ประสิทธิภาพการกรอง ${opt2Perf.operationalRemovalPct.toFixed(2)}% ` +
+        `รองรับ Filtration Rate ได้ถึง ${opt2Perf.allowableFiltrationRateMph.toFixed(1)} m/h โดยไม่มีความเสี่ยงที่แอนทราไซต์จะถูกพัดหลุดล้นรางน้ำล้างย้อน`;
+    } else {
+      // Dual-Media Plant (Phase 3 & Phase 4)
+      if (sandMissingCm > 5.0 && anthMissingCm > 3.0) {
+        recommendedOptionId = 'option1_both';
+        recommendedTitleTh = 'แนะนำ: เติม แอนทราไซต์ + ทราย (Anthracite + Sand)';
+        recommendationReasonTh =
+          `เนื่องจากปัจจุบันชั้นทรายหายไป ${sandMissingCm.toFixed(1)} ซม. และชั้นแอนทราไซต์หายไป ${anthMissingCm.toFixed(1)} ซม. ` +
+          `หากเติมแต่แอนทราไซต์อย่างเดียว ชั้นทรายด้านล่างจะบางเกินไปทำให้ความขุ่นทะลุเร็ว (Breakthrough) ส่วนหากเติมแต่ทรายอย่างเดียวจะทำให้ Head Loss สูงและหน้าบ่อตันเร็ว ` +
+          `ดังนั้นการเติมทราย ${(opt1SandAddM * 100).toFixed(1)} ซม. ร่วมกับแอนทราไซต์ ${(opt1AnthAddM * 100).toFixed(1)} ซม. จึงเหมาะสมที่สุด คืนประสิทธิภาพสู่ ${opt1Perf.operationalRemovalPct.toFixed(2)}% และรองรับ Filtration Rate ${opt1Perf.allowableFiltrationRateMph.toFixed(1)} m/h`;
+      } else if (sandMissingCm <= 5.0 && anthMissingCm > 3.0) {
+        recommendedOptionId = 'option3_anthracite_only';
+        recommendedTitleTh = 'แนะนำ: เติม แอนทราไซต์อย่างเดียว (Anthracite Only) (หรือเติมคู่หากต้องการเป๊ะ 100%)';
+        recommendationReasonTh =
+          `ชั้นทรายด้านล่างยังมีความหนาใกล้เคียงค่าออกแบบ (ขาดเพียง ${sandMissingCm.toFixed(1)} ซม.) ในขณะที่ชั้นแอนทราไซต์ด้านบนหายไป ${anthMissingCm.toFixed(1)} ซม. ` +
+          `การเลือกเติมเฉพาะแอนทราไซต์อย่างเดียว ${(opt3AnthAddM * 100).toFixed(1)} ซม. สามารถเทปูทับด้านบนได้ทันทีโดยไม่ต้องรื้อสารกรอง ให้ประสิทธิภาพการกรองสูงถึง ${opt3Perf.operationalRemovalPct.toFixed(2)}% และรองรับ Filtration Rate ได้ ${opt3Perf.allowableFiltrationRateMph.toFixed(1)} m/h`;
+      } else if (sandMissingCm > 5.0 && anthMissingCm <= 3.0) {
+        recommendedOptionId = 'option2_sand_only';
+        recommendedTitleTh = 'แนะนำ: เติม ทรายอย่างเดียว (Sand Only)';
+        recommendationReasonTh =
+          `ชั้นแอนทราไซต์ยังอยู่ครบตามเกณฑ์ แต่ชั้นทรายด้านล่างขาดหายไป ${sandMissingCm.toFixed(1)} ซม. ` +
+          `แนะนำให้เติมทรายอย่างเดียว ${(opt2SandAddM * 100).toFixed(1)} ซม. แล้วเดินระบบล้างย้อนด้วยน้ำอัตราไหลสูง (High-Rate Fluidization) เพื่อให้เม็ดทรายซึ่งมีความถ่วงจำเพาะสูงกว่า (2.65 vs 1.60) จมลงไปจัดเรียงตัวใต้ชั้นแอนทราไซต์`;
+      } else {
+        recommendedOptionId = 'option1_both';
+        recommendedTitleTh = 'ระดับสารกรองปัจจุบันใกล้เคียงค่าออกแบบ (เติมเก็บรายละเอียดตามสเปก)';
+        recommendationReasonTh =
+          `ระดับสารกรองปัจจุบันขาดหายไปเพียงเล็กน้อย (ทรายขาด ${sandMissingCm.toFixed(1)} ซม., แอนทราไซต์ขาด ${anthMissingCm.toFixed(1)} ซม.) สามารถเติมเก็บระดับตามสเปกปกติได้ทันที`;
+      }
+    }
+
+    const options = {
+      option1_both: {
+        id: 'option1_both',
+        badgeTh: 'ทางเลือกที่ 1',
+        titleTh: 'เติม แอนทราไซต์ + ทราย',
+        subtitleTh: 'Add Anthracite + Sand',
+        isRecommended: recommendedOptionId === 'option1_both',
+        quantities: calcQuantities(opt1SandAddM, opt1AnthAddM, Math.max(0, L_sand_curr - opt1SandKeepM), Math.max(0, L_anth_curr - opt1AnthKeepM)),
+        supplySpec: {
+          sand: { es: ES_sand_new, uc: UC_sand_new },
+          anthracite: { es: ES_anth_new, uc: UC_anth_new }
+        },
+        resultingBed: {
+          sandDepthM: opt1FinalSandM,
+          sandES: opt1SandMix.es,
+          sandUC: opt1SandMix.uc,
+          anthraciteDepthM: opt1FinalAnthM,
+          anthraciteES: opt1AnthMix.es,
+          anthraciteUC: opt1AnthMix.uc,
+          totalDepthM: opt1FinalSandM + opt1FinalAnthM
+        },
+        performance: opt1Perf,
+        noteTh: opt1NoteTh
+      },
+      option2_sand_only: {
+        id: 'option2_sand_only',
+        badgeTh: 'ทางเลือกที่ 2',
+        titleTh: 'เติม ทรายอย่างเดียว',
+        subtitleTh: 'Add Sand Only',
+        isRecommended: recommendedOptionId === 'option2_sand_only',
+        quantities: calcQuantities(opt2SandAddM, 0, Math.max(0, L_sand_curr - opt2SandKeepM), 0),
+        supplySpec: {
+          sand: { es: ES_sand_new, uc: UC_sand_new },
+          anthracite: null
+        },
+        resultingBed: {
+          sandDepthM: opt2FinalSandM,
+          sandES: opt2SandMix.es,
+          sandUC: opt2SandMix.uc,
+          anthraciteDepthM: opt2FinalAnthM,
+          anthraciteES: ES_anth_curr,
+          anthraciteUC: UC_anth_curr,
+          totalDepthM: opt2FinalSandM + opt2FinalAnthM
+        },
+        performance: opt2Perf,
+        noteTh: opt2NoteTh
+      },
+      option3_anthracite_only: {
+        id: 'option3_anthracite_only',
+        badgeTh: 'ทางเลือกที่ 3',
+        titleTh: 'เติม แอนทราไซต์อย่างเดียว',
+        subtitleTh: 'Add Anthracite Only',
+        isRecommended: recommendedOptionId === 'option3_anthracite_only',
+        quantities: calcQuantities(0, opt3AnthAddM, 0, Math.max(0, L_anth_curr - opt3AnthKeepM)),
+        supplySpec: {
+          sand: null,
+          anthracite: { es: ES_anth_new, uc: UC_anth_new }
+        },
+        resultingBed: {
+          sandDepthM: opt3FinalSandM,
+          sandES: ES_sand_curr,
+          sandUC: UC_sand_curr,
+          anthraciteDepthM: opt3FinalAnthM,
+          anthraciteES: opt3AnthMix.es,
+          anthraciteUC: opt3AnthMix.uc,
+          totalDepthM: opt3FinalSandM + opt3FinalAnthM
+        },
+        performance: opt3Perf,
+        noteTh: opt3NoteTh
+      }
+    };
+
+    return {
+      presetId: preset.id,
+      presetName: preset.name,
+      isDualDesign,
+      filterArea: area,
+      numFilters,
+      designPerformance,
+      currentPerformance,
+      recommendedOptionId,
+      recommendedTitleTh,
+      recommendationReasonTh,
+      options
+    };
+  }
+
+  /**
+   * "What-If" Custom Addition Simulator:
+   * Evaluate filter efficiency (% removal), allowable filtration rate (m/h), run time,
+   * head loss, and composite ES/UC when the user specifies ANY custom amount (cm / m³ / tons)
+   * and custom spec (ES, UC) of Sand and/or Anthracite.
+   */
+  function simulateCustomAddition(params) {
+    const {
+      preset = PLANT_PRESETS.phase1_2,
+      filterArea = preset.unitArea || 112.0,
+      currentSand = { depthM: 0.90, es: 0.95, uc: 1.45 },
+      currentAnthracite = { depthM: 0.0, es: 1.40, uc: 1.45 },
+      addSand = { inputMode: 'cm', value: 30.0, es: 0.95, uc: 1.40, skimCm: 0.0 },
+      addAnthracite = { inputMode: 'cm', value: 0.0, es: 1.40, uc: 1.40, skimCm: 0.0 },
+      filtrationRateMph = preset.normalFiltrationRate || 11.0,
+      tempC = 28.0,
+      influentTurbidityNTU = 2.0,
+      targetEffluentNTU = 0.10
+    } = params;
+
+    const area = Math.max(1.0, Number(filterArea) || 112.0);
+    const sandCfg = preset.layers.sand || PLANT_PRESETS.phase1_2.layers.sand;
+    const anthCfg = preset.layers.anthracite || PLANT_PRESETS.phase3.layers.anthracite;
+    const rhoSand = Number(sandCfg.bulkDensity) || 1510; // kg/m³
+    const rhoAnth = Number(anthCfg.bulkDensity) || 800; // kg/m³
+
+    function parseAddedDepthM(addObj, rhoBulk) {
+      if (!addObj) return 0;
+      const val = Math.max(0, Number(addObj.value) || 0);
+      const mode = addObj.inputMode || 'cm';
+      if (mode === 'm') return val;
+      if (mode === 'm3') return val / area;
+      if (mode === 'tons') return (val * 1000.0) / (rhoBulk * area);
+      return val / 100.0; // default 'cm'
+    }
+
+    const dAddSandM = parseAddedDepthM(addSand, rhoSand);
+    const dSkimSandM = Math.max(0, Number(addSand && addSand.skimCm) || 0) / 100.0;
+    const dKeepSandM = Math.max(0, (Number(currentSand.depthM) || 0) - dSkimSandM);
+    const finalSandDepthM = dKeepSandM + dAddSandM;
+
+    const dAddAnthM = parseAddedDepthM(addAnthracite, rhoAnth);
+    const dSkimAnthM = Math.max(0, Number(addAnthracite && addAnthracite.skimCm) || 0) / 100.0;
+    const dKeepAnthM = Math.max(0, (Number(currentAnthracite.depthM) || 0) - dSkimAnthM);
+    const finalAnthDepthM = dKeepAnthM + dAddAnthM;
+
+    const sandMix =
+      finalSandDepthM > 1e-4
+        ? computeCompositeDistribution([
+            { weight: dKeepSandM, es: Number(currentSand.es) || 0.95, uc: Number(currentSand.uc) || 1.40 },
+            { weight: dAddSandM, es: Number(addSand.es) || 0.95, uc: Number(addSand.uc) || 1.40 }
+          ])
+        : getLogNormalParams(Number(currentSand.es) || 0.95, Number(currentSand.uc) || 1.40);
+
+    const anthMix =
+      finalAnthDepthM > 1e-4
+        ? computeCompositeDistribution([
+            { weight: dKeepAnthM, es: Number(currentAnthracite.es) || 1.40, uc: Number(currentAnthracite.uc) || 1.40 },
+            { weight: dAddAnthM, es: Number(addAnthracite.es) || 1.40, uc: Number(addAnthracite.uc) || 1.40 }
+          ])
+        : getLogNormalParams(Number(currentAnthracite.es) || 1.40, Number(currentAnthracite.uc) || 1.40);
+
+    const beforePerformance = calculateFilterPerformance({
+      preset,
+      sand: {
+        enabled: Number(currentSand.depthM) > 0,
+        depthM: Number(currentSand.depthM) || 0,
+        es: Number(currentSand.es) || 0.95,
+        uc: Number(currentSand.uc) || 1.40
+      },
+      anthracite: {
+        enabled: Number(currentAnthracite.depthM) > 0,
+        depthM: Number(currentAnthracite.depthM) || 0,
+        es: Number(currentAnthracite.es) || 1.40,
+        uc: Number(currentAnthracite.uc) || 1.40
+      },
+      filtrationRateMph,
+      tempC,
+      influentTurbidityNTU,
+      targetEffluentNTU
+    });
+
+    const afterPerformance = calculateFilterPerformance({
+      preset,
+      sand: {
+        enabled: finalSandDepthM > 0,
+        depthM: finalSandDepthM,
+        es: sandMix.es,
+        uc: sandMix.uc
+      },
+      anthracite: {
+        enabled: finalAnthDepthM > 0,
+        depthM: finalAnthDepthM,
+        es: anthMix.es,
+        uc: anthMix.uc
+      },
+      filtrationRateMph,
+      tempC,
+      influentTurbidityNTU,
+      targetEffluentNTU
+    });
+
+    return {
+      addedQuantities: {
+        sand: {
+          depthAddM: dAddSandM,
+          depthAddCm: dAddSandM * 100.0,
+          depthSkimCm: dSkimSandM * 100.0,
+          netVolumeM3: dAddSandM * area,
+          netMassTons: (dAddSandM * area * rhoSand) / 1000.0,
+          supplyES: Number(addSand.es) || 0.95,
+          supplyUC: Number(addSand.uc) || 1.40
+        },
+        anthracite: {
+          depthAddM: dAddAnthM,
+          depthAddCm: dAddAnthM * 100.0,
+          depthSkimCm: dSkimAnthM * 100.0,
+          netVolumeM3: dAddAnthM * area,
+          netMassTons: (dAddAnthM * area * rhoAnth) / 1000.0,
+          supplyES: Number(addAnthracite.es) || 1.40,
+          supplyUC: Number(addAnthracite.uc) || 1.40
+        }
+      },
+      resultingBed: {
+        sandDepthM: finalSandDepthM,
+        sandES: sandMix.es,
+        sandUC: sandMix.uc,
+        sandD60: sandMix.d60,
+        sandD90: sandMix.d90,
+        anthraciteDepthM: finalAnthDepthM,
+        anthraciteES: anthMix.es,
+        anthraciteUC: anthMix.uc,
+        anthraciteD60: anthMix.d60,
+        anthraciteD90: anthMix.d90,
+        totalDepthM: finalSandDepthM + finalAnthDepthM
+      },
+      beforePerformance,
+      afterPerformance,
+      deltas: {
+        removalPctDelta: afterPerformance.operationalRemovalPct - beforePerformance.operationalRemovalPct,
+        allowableRateDeltaMph: afterPerformance.allowableFiltrationRateMph - beforePerformance.allowableFiltrationRateMph,
+        runTimeDeltaHours: afterPerformance.governingRunTimeHours - beforePerformance.governingRunTimeHours,
+        headLossDeltaM: afterPerformance.cleanBedHeadLossM - beforePerformance.cleanBedHeadLossM,
+        effluentNTUDelta: afterPerformance.expectedEffluentNTU - beforePerformance.expectedEffluentNTU
+      }
+    };
+  }
+
   return {
     PLANT_PRESETS,
     normalCDF,
@@ -1457,6 +2372,10 @@
     calculateCollapsePulsingWaterRate,
     calculateLayerReplenishment,
     solveOptimalESForConditions,
-    solveRequiredDepthForConditions
+    solveRequiredDepthForConditions,
+    calculateLayerFiltrationCoefficient,
+    calculateFilterPerformance,
+    evaluateMediaAdditionStrategies,
+    simulateCustomAddition
   };
 });

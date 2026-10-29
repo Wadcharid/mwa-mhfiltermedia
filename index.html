@@ -51,7 +51,7 @@
   <!-- Navigation Bar -->
   <nav class="nav-tabs max-w-7xl mx-auto" role="tablist">
     <button type="button" class="nav-tab-btn active" data-tab="tab-replenish">
-      <span>1. คำนวณเติมสารกรอง (3 แนวทาง)</span>
+      <span>1. ประเมินบ่อกรองปัจจุบัน &amp; เปรียบเทียบการเติมสารกรอง</span>
     </button>
     <button type="button" class="nav-tab-btn" data-tab="tab-reverse">
       <span>2. หาค่า ES / ความลึก / Filtration Rate ที่เหมาะสม</span>
@@ -72,80 +72,74 @@
   <main class="max-w-7xl mx-auto p-4 md:p-6">
 
     <!-- ===================================================================
-         TAB 1: REPLENISHMENT CALCULATOR (คำนวณการเติมสารกรอง 3 แนวทาง)
+         TAB 1: MAIN DECISION DASHBOARD (ประเมินสภาพปัจจุบัน + 3 ทางเลือกการเติม + จำลองกำหนดเอง)
          =================================================================== -->
     <section id="tab-replenish" class="tab-panel">
-      <!-- Step 1: Select Plant Phase Preset -->
+      <!-- Step 1: Select Plant Phase Preset & Input Current Condition -->
       <div class="eng-card">
         <div class="eng-card-header">
           <h2 class="eng-card-title">
-            <span>① เลือกประเภทบ่อกรองตาม Design โรงงานผลิตน้ำมหาสวัสดิ์ (Plant Phase Selection)</span>
+            <span>① เลือกเฟสบ่อกรอง &amp; ระบุสภาพบ่อกรองปัจจุบัน (Current Filter Condition Input)</span>
           </h2>
-          <span id="activePresetBadge" class="badge badge-info">Phase 1 &amp; 2 (Aquazur V)</span>
+          <span id="activePresetBadge" class="badge badge-info">Phase 3 (SG/OTV Dual Media)</span>
         </div>
         <div class="preset-grid" id="presetSelectorGrid">
           <!-- Populated by JS -->
         </div>
 
-        <!-- Filter Metadata & Design Summary Bar -->
-        <div class="grid grid-cols-1 md:grid-cols-6 gap-3 mt-4 pt-4 border-t border-slate-200 bg-slate-50 p-3 rounded-lg">
+        <!-- Filter Metadata & Operating Parameters Bar -->
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mt-4 pt-4 border-t border-slate-200 bg-slate-50 p-3 rounded-lg">
           <div>
             <label class="form-label" for="inputFilterName">ชื่อ/หมายเลขบ่อกรอง</label>
-            <input type="text" id="inputFilterName" class="form-input num-mono" value="บ่อกรอง F-01 (เฟส 1)" />
+            <input type="text" id="inputFilterName" class="form-input num-mono" value="บ่อกรอง F-301 (เฟส 3)" />
           </div>
           <div>
             <label class="form-label" for="inputFilterArea">พื้นที่บ่อกรอง $A$ ($\text{m}^2$)</label>
-            <input type="number" id="inputFilterArea" class="form-input num-mono" step="0.1" min="10" value="197.8" />
+            <input type="number" id="inputFilterArea" class="form-input num-mono" step="0.1" min="10" value="112.0" />
           </div>
           <div>
-            <label class="form-label" for="inputFiltrationRate">อัตราการกรอง $v_F$ ($\text{m/h}$)</label>
-            <input type="number" id="inputFiltrationRate" class="form-input num-mono" step="0.1" min="2" value="11.0" />
+            <label class="form-label" for="inputFiltrationRate">อัตราการกรองเดินระบบ $v_F$ ($\text{m/h}$)</label>
+            <input type="number" id="inputFiltrationRate" class="form-input num-mono font-bold text-sky-900" step="0.1" min="2" value="11.1" />
+          </div>
+          <div>
+            <label class="form-label" for="inputInfluentNTU">ความขุ่นน้ำเข้าบ่อกรอง ($\text{NTU}$)</label>
+            <input type="number" id="inputInfluentNTU" class="form-input num-mono font-bold text-sky-900" step="0.1" min="0.2" max="20" value="2.0" />
           </div>
           <div>
             <label class="form-label" for="inputWaterTemp">อุณหภูมิน้ำ $T$ ($^\circ\text{C}$)</label>
             <input type="number" id="inputWaterTemp" class="form-input num-mono" step="0.5" min="10" max="40" value="28.0" />
           </div>
           <div>
-            <label class="form-label" for="inputSkimAllowance">เผื่อปาดผิว Skimming (%)</label>
-            <input type="number" id="inputSkimAllowance" class="form-input num-mono" step="0.5" min="0" max="30" value="3.0" />
-          </div>
-          <div>
-            <label class="form-label" for="inputCompactAllowance">เผื่อยุบตัว/สูญเสีย (%)</label>
-            <input type="number" id="inputCompactAllowance" class="form-input num-mono" step="0.5" min="0" max="30" value="7.0" />
+            <label class="form-label" for="inputCompactAllowance">เผื่อสั่งซื้อรวม Skim+ยุบตัว (%)</label>
+            <input type="number" id="inputCompactAllowance" class="form-input num-mono" step="0.5" min="0" max="30" value="10.0" />
+            <input type="hidden" id="inputSkimAllowance" value="0.0" />
           </div>
         </div>
-      </div>
 
-      <!-- Step 2: Current Media Condition & Random Multi-Point Sampling -->
-      <div class="eng-card">
-        <div class="eng-card-header flex-wrap gap-2">
-          <div>
-            <h2 class="eng-card-title">
-              <span>② ข้อมูลสภาพสารกรองปัจจุบัน (Current Media Condition: ขนาด ES, UC และระดับความลึก)</span>
-            </h2>
-            <p class="text-xs text-slate-500 mt-0.5">
-              สามารถกรอกค่าตัวแทนของบ่อโดยตรง หรือเปิดโหมด "รวมผลจากการสุ่มเก็บตัวอย่างหลายตำแหน่ง/ความลึกไม่แน่นอน" เพื่อคำนวณค่า Composite ES &amp; UC อัตโนมัติ
-            </p>
+        <!-- Toolbar for Multi-Point Random Sampling & Sample Defect Reset -->
+        <div class="flex flex-wrap items-center justify-between gap-2 mt-4 mb-3">
+          <div class="text-xs text-slate-600 font-semibold">
+            👇 กรอก <strong>ระดับความลึกปัจจุบัน ($L_{\text{curr}}$), ขนาด $ES$, และค่า $UC$</strong> ของชั้นสารกรองในบ่อ เพื่อประเมินสมรรถนะและทางเลือกการเติมทันที:
           </div>
           <div class="flex items-center gap-2 no-print">
             <button type="button" id="btnToggleSamplingModal" class="btn-secondary text-xs">
-              🧪 เปิดเครื่องมือคำนวณจากการสุ่มเก็บหลายจุด/ความลึก (Multi-Point Sampling)
+              🧪 คำนวณ ES/UC จากการสุ่มเก็บหลายจุด/ความลึก
             </button>
             <button type="button" id="btnResetToSampleDefect" class="btn-secondary text-xs">
-              🔄 โหลดตัวอย่างสารกรองพร่อง
+              🔄 โหลดตัวอย่างสภาพบ่อพร่อง
             </button>
           </div>
         </div>
 
         <!-- Collapsible Multi-Point Random Sampling Aggregator Panel -->
-        <div id="multiSamplePanel" class="hidden mb-5 p-4 rounded-xl bg-sky-50/70 border border-sky-200">
+        <div id="multiSamplePanel" class="hidden mb-4 p-4 rounded-xl bg-sky-50/70 border border-sky-200">
           <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-3 border-b border-sky-200">
             <div>
               <h3 class="text-sm font-bold text-sky-950">
                 📊 ตารางคำนวณค่าตัวแทนจากการสุ่มเก็บตัวอย่างหลายตำแหน่งและหลายระดับความลึก (Stratified / Random Sampling Aggregator)
               </h3>
               <p class="text-xs text-sky-800">
-                เนื่องจากหน้างานเป็นการสุ่มเก็บตำแหน่งและความลึกไม่แน่นอน ระบบจะนำค่า $(ES_k, UC_k)$ ของทุกจุดมาสร้างฟังก์ชันการกระจายตัวสะสมรวม $F_{\text{composite}}(d) = \sum w_k \Phi\left(\frac{\ln d - \mu_k}{\sigma_k}\right)$ เพื่อหาค่า $ES_{\text{composite}}$ และ $UC_{\text{composite}}$ ที่แท้จริงตามหลักสถิติ Log-Normal
+                นำค่า $(ES_k, UC_k)$ ของทุกจุดสุ่มมาคำนวณฟังก์ชันการกระจายตัวสะสมรวม $F_{\text{composite}}(d)$ เพื่อหาค่า $ES_{\text{composite}}$ และ $UC_{\text{composite}}$ ที่แท้จริง
               </p>
             </div>
             <div class="flex items-center gap-2">
@@ -190,7 +184,7 @@
 
         <!-- Layer Inputs Grid (Anthracite & Sand) -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" id="layerInputsContainer">
-          <!-- Anthracite Layer Card (shown when dual media is active) -->
+          <!-- Anthracite Layer Card -->
           <div id="cardInputAnthracite" class="p-4 rounded-xl border-2 border-slate-300 bg-slate-50/60">
             <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-200">
               <div class="flex items-center gap-2">
@@ -200,46 +194,44 @@
               <span class="text-xs text-slate-500">ความหนาแน่นรวม $\approx 800\text{ kg/m}^3$</span>
             </div>
 
-            <!-- Design Spec Row -->
-            <div class="grid grid-cols-3 gap-2.5 p-2.5 rounded-lg bg-slate-200/70 mb-3">
+            <!-- Current Condition Row (Highlighted Primary Input) -->
+            <div class="grid grid-cols-3 gap-2.5 p-3 rounded-lg bg-white border-2 border-sky-500 shadow-sm mb-3">
               <div>
-                <label class="form-label text-xs" for="designDepthAnth">ความลึก Design $L_{\text{design}}$ (ม.)</label>
-                <input type="number" id="designDepthAnth" class="form-input num-mono text-sm" step="0.01" min="0.1" value="0.80" />
+                <label class="form-label text-xs text-sky-950 font-bold" for="currDepthAnth">ความลึกปัจจุบัน $L_{\text{curr}}$ (ม.)</label>
+                <input type="number" id="currDepthAnth" class="form-input num-mono font-bold text-base text-sky-900" step="0.01" min="0" value="0.55" />
               </div>
               <div>
-                <label class="form-label text-xs" for="designESAnth">ขนาด Design $ES$ (มม.)</label>
-                <input type="number" id="designESAnth" class="form-input num-mono text-sm" step="0.01" min="0.4" value="1.55" />
+                <label class="form-label text-xs text-sky-950 font-bold" for="currESAnth">ขนาดปัจจุบัน $ES_{\text{curr}}$ (มม.)</label>
+                <input type="number" id="currESAnth" class="form-input num-mono font-bold text-base text-sky-900" step="0.01" min="0.2" value="1.62" />
               </div>
               <div>
-                <label class="form-label text-xs" for="designUCAnth">ค่า Design $UC$</label>
-                <input type="number" id="designUCAnth" class="form-input num-mono text-sm" step="0.01" min="1.1" value="1.50" />
-              </div>
-            </div>
-
-            <!-- Current Condition Row -->
-            <div class="grid grid-cols-3 gap-2.5 p-2.5 rounded-lg bg-white border border-sky-300 mb-3">
-              <div>
-                <label class="form-label text-xs text-sky-900" for="currDepthAnth">ระดับความลึกปัจจุบัน $L_{\text{curr}}$ (ม.)</label>
-                <input type="number" id="currDepthAnth" class="form-input num-mono font-bold text-sky-900" step="0.01" min="0" value="0.58" />
-              </div>
-              <div>
-                <label class="form-label text-xs text-sky-900" for="currESAnth">ขนาดปัจจุบัน $ES_{\text{curr}}$ (มม.)</label>
-                <input type="number" id="currESAnth" class="form-input num-mono font-bold text-sky-900" step="0.01" min="0.2" value="1.64" />
-              </div>
-              <div>
-                <label class="form-label text-xs text-sky-900" for="currUCAnth">ค่าปัจจุบัน $UC_{\text{curr}}$</label>
-                <input type="number" id="currUCAnth" class="form-input num-mono font-bold text-sky-900" step="0.01" min="1.05" value="1.58" />
+                <label class="form-label text-xs text-sky-950 font-bold" for="currUCAnth">ค่าปัจจุบัน $UC_{\text{curr}}$</label>
+                <input type="number" id="currUCAnth" class="form-input num-mono font-bold text-base text-sky-900" step="0.01" min="1.05" value="1.58" />
               </div>
             </div>
 
-            <!-- Optional New Supply Spec & Tolerance Row -->
-            <div class="grid grid-cols-3 gap-2.5 text-xs">
+            <!-- Design Spec & Supply Spec Row -->
+            <div class="grid grid-cols-3 gap-2 p-2 rounded-lg bg-slate-200/70 mb-2 text-xs">
               <div>
-                <label class="form-label text-xs" for="supplyESAnth">ES สารกรองใหม่ที่จะเติม (มม.)</label>
+                <label class="form-label text-xs" for="designDepthAnth">ความลึก Design (ม.)</label>
+                <input type="number" id="designDepthAnth" class="form-input num-mono text-xs" step="0.01" min="0" value="0.80" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="designESAnth">Design $ES$ (มม.)</label>
+                <input type="number" id="designESAnth" class="form-input num-mono text-xs" step="0.01" min="0.4" value="1.55" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="designUCAnth">Design $UC$</label>
+                <input type="number" id="designUCAnth" class="form-input num-mono text-xs" step="0.01" min="1.1" value="1.50" />
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <label class="form-label text-xs" for="supplyESAnth">สเปกแอนทราไซต์ใหม่ $ES$ (มม.)</label>
                 <input type="number" id="supplyESAnth" class="form-input num-mono text-xs" step="0.01" value="1.55" />
               </div>
               <div>
-                <label class="form-label text-xs" for="supplyUCAnth">UC สารกรองใหม่ที่จะเติม</label>
+                <label class="form-label text-xs" for="supplyUCAnth">สเปกแอนทราไซต์ใหม่ $UC$</label>
                 <input type="number" id="supplyUCAnth" class="form-input num-mono text-xs" step="0.01" value="1.50" />
               </div>
               <div>
@@ -259,47 +251,45 @@
               <span class="text-xs text-slate-500">ความหนาแน่นรวม $\approx 1,510\text{ kg/m}^3$</span>
             </div>
 
-            <!-- Design Spec Row -->
-            <div class="grid grid-cols-3 gap-2.5 p-2.5 rounded-lg bg-amber-100/70 mb-3">
+            <!-- Current Condition Row (Highlighted Primary Input) -->
+            <div class="grid grid-cols-3 gap-2.5 p-3 rounded-lg bg-white border-2 border-amber-500 shadow-sm mb-3">
               <div>
-                <label class="form-label text-xs" for="designDepthSand">ความลึก Design $L_{\text{design}}$ (ม.)</label>
-                <input type="number" id="designDepthSand" class="form-input num-mono text-sm" step="0.01" min="0.1" value="1.20" />
+                <label class="form-label text-xs text-amber-950 font-bold" for="currDepthSand">ความลึกปัจจุบัน $L_{\text{curr}}$ (ม.)</label>
+                <input type="number" id="currDepthSand" class="form-input num-mono font-bold text-base text-amber-950" step="0.01" min="0" value="0.58" />
               </div>
               <div>
-                <label class="form-label text-xs" for="designESSand">ขนาด Design $ES$ (มม.)</label>
-                <input type="number" id="designESSand" class="form-input num-mono text-sm" step="0.01" min="0.3" value="0.95" />
+                <label class="form-label text-xs text-amber-950 font-bold" for="currESSand">ขนาดปัจจุบัน $ES_{\text{curr}}$ (มม.)</label>
+                <input type="number" id="currESSand" class="form-input num-mono font-bold text-base text-amber-950" step="0.01" min="0.2" value="0.98" />
               </div>
               <div>
-                <label class="form-label text-xs" for="designUCSand">ค่า Design $UC$</label>
-                <input type="number" id="designUCSand" class="form-input num-mono text-sm" step="0.01" min="1.1" value="1.40" />
-              </div>
-            </div>
-
-            <!-- Current Condition Row -->
-            <div class="grid grid-cols-3 gap-2.5 p-2.5 rounded-lg bg-white border border-amber-400 mb-3">
-              <div>
-                <label class="form-label text-xs text-amber-950" for="currDepthSand">ระดับความลึกปัจจุบัน $L_{\text{curr}}$ (ม.)</label>
-                <input type="number" id="currDepthSand" class="form-input num-mono font-bold text-amber-950" step="0.01" min="0" value="0.92" />
-              </div>
-              <div>
-                <label class="form-label text-xs text-amber-950" for="currESSand">ขนาดปัจจุบัน $ES_{\text{curr}}$ (มม.)</label>
-                <input type="number" id="currESSand" class="form-input num-mono font-bold text-amber-950" step="0.01" min="0.2" value="1.03" />
-              </div>
-              <div>
-                <label class="form-label text-xs text-amber-950" for="currUCSand">ค่าปัจจุบัน $UC_{\text{curr}}$</label>
-                <input type="number" id="currUCSand" class="form-input num-mono font-bold text-amber-950" step="0.01" min="1.05" value="1.48" />
+                <label class="form-label text-xs text-amber-950 font-bold" for="currUCSand">ค่าปัจจุบัน $UC_{\text{curr}}$</label>
+                <input type="number" id="currUCSand" class="form-input num-mono font-bold text-base text-amber-950" step="0.01" min="1.05" value="1.56" />
               </div>
             </div>
 
-            <!-- Optional New Supply Spec & Tolerance Row -->
-            <div class="grid grid-cols-3 gap-2.5 text-xs">
+            <!-- Design Spec & Supply Spec Row -->
+            <div class="grid grid-cols-3 gap-2 p-2 rounded-lg bg-amber-100/70 mb-2 text-xs">
               <div>
-                <label class="form-label text-xs" for="supplyESSand">ES สารกรองใหม่ที่จะเติม (มม.)</label>
+                <label class="form-label text-xs" for="designDepthSand">ความลึก Design (ม.)</label>
+                <input type="number" id="designDepthSand" class="form-input num-mono text-xs" step="0.01" min="0.1" value="0.70" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="designESSand">Design $ES$ (มม.)</label>
+                <input type="number" id="designESSand" class="form-input num-mono text-xs" step="0.01" min="0.3" value="0.95" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="designUCSand">Design $UC$</label>
+                <input type="number" id="designUCSand" class="form-input num-mono text-xs" step="0.01" min="1.1" value="1.50" />
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <label class="form-label text-xs" for="supplyESSand">สเปกทรายใหม่ $ES$ (มม.)</label>
                 <input type="number" id="supplyESSand" class="form-input num-mono text-xs" step="0.01" value="0.95" />
               </div>
               <div>
-                <label class="form-label text-xs" for="supplyUCSand">UC สารกรองใหม่ที่จะเติม</label>
-                <input type="number" id="supplyUCSand" class="form-input num-mono text-xs" step="0.01" value="1.40" />
+                <label class="form-label text-xs" for="supplyUCSand">สเปกทรายใหม่ $UC$</label>
+                <input type="number" id="supplyUCSand" class="form-input num-mono text-xs" step="0.01" value="1.50" />
               </div>
               <div>
                 <label class="form-label text-xs" for="tolESSand">เกณฑ์ยอมรับ $\pm\Delta ES$ (%)</label>
@@ -310,43 +300,164 @@
         </div>
       </div>
 
-      <!-- Step 3: Executive Summary & 3-Mode Comparison Results -->
+      <!-- =================================================================
+           STEP 2: CURRENT FILTER CONDITION DIAGNOSIS (% Removal, Filtration Rate, Run Time)
+           ================================================================= -->
       <div class="eng-card">
         <div class="eng-card-header flex-wrap gap-2">
           <div>
             <h2 class="eng-card-title">
-              <span>③ ผลการคำนวณการเติมสารกรองเปรียบเทียบทั้ง 3 แนวทาง (3 Replenishment Approaches)</span>
+              <span>② ประเมินสมรรถนะบ่อกรองจากสภาพปัจจุบัน (Current Filter Performance &amp; Allowable Filtration Rate)</span>
             </h2>
             <p class="text-xs text-slate-500 mt-0.5">
-              คลิกเลือกแนวทางที่ต้องการใช้เป็นแผนหลักในการสั่งซื้อและแสดงกราฟจำลองชั้นสารกรอง
+              คำนวณจากสภาพชั้นสารกรองปัจจุบันเปรียบเทียบกับค่า Design ตามสมการ Tufenkji-Elimelech (2004) / Yao Filtration Model, Ergun Head Loss และ MWH Breakthrough Model
             </p>
           </div>
-          <div class="flex items-center gap-2 no-print">
-            <label class="text-xs font-semibold text-slate-700" for="selectActiveModeForSummary">แนวทางที่เลือกใช้สรุปจัดซื้อ:</label>
-            <select id="selectActiveModeForSummary" class="form-select text-xs w-64 font-semibold">
-              <option value="A_topup">แนวทาง (ก-1): เติมสเปก Design ให้ได้ระดับเดิม (ไม่ปาดของเก่า)</option>
-              <option value="A_skim" selected>แนวทาง (ก-2): เติมสเปก Design + ปาดของเก่าออกเพื่อให้ผ่านเกณฑ์ ES/UC</option>
-              <option value="B">แนวทาง (ข): สั่งสเปกพิเศษ (Custom Blend) เพื่อดึงค่าเฉลี่ยกลับสู่ Design</option>
-              <option value="C">แนวทาง (ค): ปรับระดับความลึกชดเชยตามดัชนี L/d_e Ratio</option>
-            </select>
-            <button type="button" id="btnAddFilterToBatch" class="btn-primary text-xs whitespace-nowrap">
-              ➕ บันทึกบ่อนี้ลงตารางสรุปจัดซื้อ
-            </button>
-          </div>
+          <span id="currentStatusBadge" class="badge badge-warn">กำลังประเมิน...</span>
         </div>
 
-        <!-- Overall Filter Performance KPIs Before vs After -->
-        <div id="filterKpiSummaryGrid" class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
-          <!-- Populated by JS -->
-        </div>
-
-        <!-- Detailed 3-Mode Cards per Layer -->
-        <div id="threeModesResultContainer" class="space-y-6">
+        <div id="currentDiagnosisGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
           <!-- Populated by JS -->
         </div>
       </div>
 
-      <!-- Step 4: Visual Cross-Section & Sieve Distribution Curve -->
+      <!-- =================================================================
+           STEP 3: COMPARE 3 MATERIAL ADDITION OPTIONS (Anthracite+Sand vs Sand Only vs Anthracite Only)
+           ================================================================= -->
+      <div class="eng-card">
+        <div class="eng-card-header flex-wrap gap-2">
+          <div>
+            <h2 class="eng-card-title">
+              <span>③ เปรียบเทียบทางเลือกการเติมสารกรอง: เติม แอนทราไซต์+ทราย vs ทรายอย่างเดียว vs แอนทราไซต์อย่างเดียว</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              วิเคราะห์เปรียบเทียบว่าจากสภาพบ่อกรองปัจจุบัน ควรเติมแบบไหน ปริมาณเท่าไร และหลังเติมจะได้ประสิทธิภาพ (% Removal) และ Filtration Rate เท่าไร
+            </p>
+          </div>
+        </div>
+
+        <!-- Recommendation Banner -->
+        <div id="strategyRecommendationBanner" class="mb-4">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- 3 Strategy Cards Grid -->
+        <div id="threeAdditionStrategiesGrid" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- =================================================================
+           STEP 4: INTERACTIVE "WHAT-IF" CUSTOM ADDITION SIMULATOR
+           ================================================================= -->
+      <div class="eng-card border-2 border-sky-600/30 bg-gradient-to-b from-white to-sky-50/30">
+        <div class="eng-card-header flex-wrap gap-2">
+          <div>
+            <h2 class="eng-card-title text-sky-950">
+              <span>④ จำลองการเติมสารกรองตามปริมาณหรือสเปกที่คุณระบุเอง ("What-If" Custom Addition Simulator)</span>
+            </h2>
+            <p class="text-xs text-slate-600 mt-0.5">
+              ทดลองระบุปริมาณที่จะเติม (ซม. / $\text{m}^3$ / ตัน) และสเปก $(ES, UC)$ ของทรายและ/หรือแอนทราไซต์ รวมถึงอัตราการกรอง $v_F$ เพื่อดูว่าประสิทธิภาพบ่อกรอง (% Removal) และรอบการกรองจะเปลี่ยนไปอย่างไรทันที
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5 no-print">
+            <span class="text-xs font-semibold text-slate-600">ปุ่มลัดทดลอง:</span>
+            <button type="button" class="btn-secondary text-xs sim-quick-btn" data-preset-sim="recommended">
+              ⭐ ตามคำแนะนำระบบ
+            </button>
+            <button type="button" class="btn-secondary text-xs sim-quick-btn" data-preset-sim="sand20">
+              + เติมทราย 20 ซม. อย่างเดียว
+            </button>
+            <button type="button" class="btn-secondary text-xs sim-quick-btn" data-preset-sim="anth25">
+              + เติมแอนทราไซต์ 25 ซม. อย่างเดียว
+            </button>
+            <button type="button" class="btn-secondary text-xs sim-quick-btn" data-preset-sim="zero">
+              ไม่เติมเลย (0 ซม.)
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Simulator Input Controls -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
+          <!-- Custom Sand Addition Box -->
+          <div class="lg:col-span-5 p-3.5 rounded-xl bg-amber-50/70 border border-amber-300">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-bold text-xs text-amber-950">🟨 1. ระบุการเติมทราย (Silica Sand)</span>
+              <select id="simSandUnit" class="form-select text-xs w-36 py-1">
+                <option value="cm" selected>ระบุเป็น ความหนา (ซม.)</option>
+                <option value="m3">ระบุเป็น ปริมาตร (m³)</option>
+                <option value="tons">ระบุเป็น น้ำหนัก (ตัน)</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-4 gap-2">
+              <div>
+                <label class="form-label text-xs" for="simSandVal" id="lblSimSandVal">ปริมาณที่เติม (ซม.)</label>
+                <input type="number" id="simSandVal" class="form-input num-mono font-bold text-amber-950" step="1" min="0" value="12.0" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="simSandES">ES ทรายที่เติม (มม.)</label>
+                <input type="number" id="simSandES" class="form-input num-mono" step="0.01" min="0.3" value="0.95" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="simSandUC">UC ทรายที่เติม</label>
+                <input type="number" id="simSandUC" class="form-input num-mono" step="0.01" min="1.1" value="1.50" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="simSandSkimCm">ปาดของเก่าออก (ซม.)</label>
+                <input type="number" id="simSandSkimCm" class="form-input num-mono" step="1" min="0" value="0.0" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Custom Anthracite Addition Box -->
+          <div class="lg:col-span-5 p-3.5 rounded-xl bg-slate-100 border border-slate-300">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-bold text-xs text-slate-900">⬛ 2. ระบุการเติมแอนทราไซต์ (Anthracite)</span>
+              <select id="simAnthUnit" class="form-select text-xs w-36 py-1">
+                <option value="cm" selected>ระบุเป็น ความหนา (ซม.)</option>
+                <option value="m3">ระบุเป็น ปริมาตร (m³)</option>
+                <option value="tons">ระบุเป็น น้ำหนัก (ตัน)</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-4 gap-2">
+              <div>
+                <label class="form-label text-xs" for="simAnthVal" id="lblSimAnthVal">ปริมาณที่เติม (ซม.)</label>
+                <input type="number" id="simAnthVal" class="form-input num-mono font-bold text-slate-900" step="1" min="0" value="25.0" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="simAnthES">ES แอนทราไซต์ (มม.)</label>
+                <input type="number" id="simAnthES" class="form-input num-mono" step="0.01" min="0.5" value="1.55" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="simAnthUC">UC แอนทราไซต์</label>
+                <input type="number" id="simAnthUC" class="form-input num-mono" step="0.01" min="1.1" value="1.50" />
+              </div>
+              <div>
+                <label class="form-label text-xs" for="simAnthSkimCm">ปาดของเก่าออก (ซม.)</label>
+                <input type="number" id="simAnthSkimCm" class="form-input num-mono" step="1" min="0" value="0.0" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Test Filtration Rate Box -->
+          <div class="lg:col-span-2 p-3.5 rounded-xl bg-sky-100/70 border border-sky-300 flex flex-col justify-between">
+            <div>
+              <label class="form-label text-xs text-sky-950 font-bold" for="simTestVf">3. ทดสอบที่ Filtration Rate ($\text{m/h}$)</label>
+              <input type="number" id="simTestVf" class="form-input num-mono font-bold text-base text-sky-950 mt-1" step="0.2" min="2" max="25" value="11.1" />
+            </div>
+            <div class="text-[11px] text-sky-900 mt-2">
+              ปรับค่าเพื่อดูผลกระทบของอัตราการกรองต่อ % Removal และรอบกรอง
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Simulation Results Box -->
+        <div id="customSimResultContainer">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Step 5: Visual Cross-Section & Sieve Distribution Curve -->
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
         <!-- 2D Cross-Section Visualizer -->
         <div class="eng-card lg:col-span-5">
@@ -377,6 +488,40 @@
           <div class="chart-box">
             <canvas id="sieveCurveCanvas"></canvas>
           </div>
+        </div>
+      </div>
+
+      <!-- Step 6: Collapsible Detailed 3 Academic Replenishment Modes (Skim / Custom Blend / L/d_e) -->
+      <div class="eng-card">
+        <div class="eng-card-header flex-wrap gap-2">
+          <div>
+            <h2 class="eng-card-title">
+              <span>⑤ รายละเอียดเชิงลึก: เปรียบเทียบการปรับแก้สเปกรายชั้น 3 แนวทางวิชาการ (Skim vs Custom Blend vs $L/d_e$)</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              สำหรับกรณีที่ขนาด $ES$ และ $UC$ ของสารกรองเก่าในบ่อเพี้ยนไปมาก และต้องการวิเคราะห์ว่าจะปาดออกเท่าไร หรือจะสั่งสเปกพิเศษมาผสมอย่างไร
+            </p>
+          </div>
+          <div class="flex items-center gap-2 no-print">
+            <label class="text-xs font-semibold text-slate-700" for="selectActiveModeForSummary">แผนจัดซื้อสำหรับบันทึก:</label>
+            <select id="selectActiveModeForSummary" class="form-select text-xs w-60 font-semibold">
+              <option value="A_topup">แนวทาง (ก-1): เติมสเปก Design ให้ได้ระดับเดิม (ไม่ปาดของเก่า)</option>
+              <option value="A_skim" selected>แนวทาง (ก-2): เติมสเปก Design + ปาดของเก่าออกเพื่อให้ผ่านเกณฑ์ ES/UC</option>
+              <option value="B">แนวทาง (ข): สั่งสเปกพิเศษ (Custom Blend) เพื่อดึงค่าเฉลี่ยกลับสู่ Design</option>
+              <option value="C">แนวทาง (ค): ปรับระดับความลึกชดเชยตามดัชนี L/d_e Ratio</option>
+            </select>
+            <button type="button" id="btnAddFilterToBatch" class="btn-primary text-xs whitespace-nowrap">
+              ➕ บันทึกบ่อนี้ลงตารางสรุปจัดซื้อ
+            </button>
+          </div>
+        </div>
+
+        <div id="filterKpiSummaryGrid" class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+          <!-- Populated by JS -->
+        </div>
+
+        <div id="threeModesResultContainer" class="space-y-6">
+          <!-- Populated by JS -->
         </div>
       </div>
     </section>
@@ -766,6 +911,16 @@
               $$0.45\,Q_a^2 + 100\left(\frac{V}{V_{mf,60}}\right) = 41.9$$
               รวมถึงการเผื่อปริมาตรสำหรับการปาดเม็ดละเอียดผิวหน้าหลังการล้างย้อนครั้งแรก (Skimming of fines $\approx 2\text{–}5\%$) และการยุบตัวของชั้นสารกรอง (Compaction $\approx 5\text{–}10\%$)
             </p>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 md:col-span-2">
+            <h3 class="font-bold text-slate-900 mb-2">5. สมการประสิทธิภาพการดักจับอนุภาค (% Removal) และ Tufenkji-Elimelech (2004) / Yao Filtration Model</h3>
+            <p class="text-xs text-slate-700 mb-2">
+              อ้างอิง <em>MWH's Water Treatment (3rd Ed., Chap. 11, Eq. 11-36 ถึง 11-48, หน้า 778–788)</em> ประสิทธิภาพการชนและดักจับอนุภาคของเม็ดสารกรองเดี่ยว ($\eta = \eta_D + \eta_I + \eta_G$) คำนวณจากกลไกการแพร่ (Diffusion), การสกัดกั้น (Interception) และการตกจมด้วยแรงโน้มถ่วง (Sedimentation):
+            </p>
+            <div class="bg-white p-3 rounded border border-slate-200 text-xs overflow-x-auto">
+              $$\eta_D = 2.4 A_s^{1/3} N_R^{-0.081} N_{Pe}^{-0.715} N_{vdW}^{0.052}, \quad \eta_I = 0.55 A_s N_R^{1.675} N_A^{0.125}, \quad \eta_G = 0.22 N_R^{-0.24} N_G^{1.11} N_{vdW}^{0.053}$$
+              $$\lambda(z) = \frac{3(1-\varepsilon)}{2 \psi d_c(z)} \alpha \, \eta\big(d_c(z), v_F\big), \quad \text{\% Removal} = \left[1 - \exp\left(-\sum_{i} \int_0^{L_i} \lambda_i(z)\,dz\right)\right] \times 100\%$$
+            </div>
           </div>
         </div>
       </div>
